@@ -31,7 +31,7 @@ const getDetails = async (boardId) => {
     }
 
     const resBoard = cloneDeep(board)
-    //Đưa card về đúng column
+    //Đưa card về đúng column (dữ liệu chưa đúng vì card nằm cùng cấp với column)
     //method equals được mongoDb support
     resBoard.columns.forEach((column) => {
       column.cards = resBoard.cards.filter((card) =>
@@ -52,8 +52,22 @@ const getDetails = async (boardId) => {
     throw error
   }
 }
+const update = async (boardId, reqBody) => {
+  try {
+    const updateData = {
+      ...reqBody,
+      updatedAt: Date.now()
+    }
+    const updatedBoard = await boardModel.update(boardId, updateData)
+
+    return updatedBoard
+  } catch (error) {
+    throw error
+  }
+}
 
 export const boardService = {
   createNew,
-  getDetails
+  getDetails,
+  update
 }
