@@ -3,8 +3,8 @@ import { ObjectId } from 'mongodb'
 import { GET_DB } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 import { BOARD_TYPE } from '~/utils/constants'
-import { columnModel } from './columnModel'
-import { cardModel } from './cardModel'
+import { columnModel } from '~/models/columnModel'
+import { cardModel } from '~/models/cardModel'
 
 //Define Collection (Name & Schema)
 const BOARD_COLLECTION_NAME = 'boards'

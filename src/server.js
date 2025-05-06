@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import express from 'express'
 import cors from 'cors'
-import { corsOptions } from './config/cors'
+import { corsOptions } from '~/config/cors'
 import AsyncExitHook from 'async-exit-hook'
 import { CONNECT_DB, CLOSE_DB } from '~/config/mongodb'
 import { env } from '~/config/environment'
@@ -23,11 +23,21 @@ const START_SERVER = () => {
   // Middleware xử lý lỗi tập trung
   app.use(errorHandlingMiddleware)
 
-  app.listen(env.APP_PORT, env.APP_HOST, () => {
-    console.log(
-      `3. Hello ${env.AUTHOR}, I am running at ${env.APP_HOST}:${env.APP_PORT}/`
-    )
-  })
+  //Môi trường production
+  if (env.BUILD_MODE === 'production') {
+    app.listen(process.env.PORT, () => {
+      console.log(
+        `3. PRODUCTION Hello ${env.AUTHOR}, I am running at PORT: ${process.env.PORT}`
+      )
+    })
+  } else {
+    //Môi trường Local dev
+    app.listen(env.LOCAL_DEV_APP_PORT, env.LOCAL_DEV_APP_HOST, () => {
+      console.log(
+        `3. LOCAL_DEV Hello ${env.AUTHOR}, I am running at HOST: ${env.LOCAL_DEV_APP_HOST} and PORT: ${env.LOCAL_DEV_APP_PORT}`
+      )
+    })
+  }
 
   //Thực hiện các tác vụ cleanup trước khi dừng server
   AsyncExitHook(() => {
