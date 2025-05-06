@@ -49,12 +49,12 @@ const createNew = async (data) => {
   }
 }
 
-const findOneById = async (id) => {
+const findOneById = async (columnId) => {
   try {
     const result = await GET_DB()
       .collection(COLUMN_COLLECTION_NAME)
       .findOne({
-        _id: new ObjectId(id)
+        _id: new ObjectId(columnId)
       })
 
     return result
@@ -88,13 +88,6 @@ const update = async (columnId, updateData) => {
       }
     })
 
-    //Đối với dữ liệu liên quan đến objectId, biến đổi ở đây
-    if (updateData.cardOrderIds) {
-      updateData.cardOrderIds = updateData.cardOrderIds.map(
-        (_id) => new ObjectId(_id)
-      )
-    }
-
     const result = await GET_DB()
       .collection(COLUMN_COLLECTION_NAME)
       .findOneAndUpdate(
@@ -109,11 +102,26 @@ const update = async (columnId, updateData) => {
   }
 }
 
+const deleteOnebyId = async (columnId) => {
+  try {
+    const result = await GET_DB()
+      .collection(COLUMN_COLLECTION_NAME)
+      .deleteOne({
+        _id: new ObjectId(columnId)
+      })
+
+    return result
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 export const columnModel = {
   COLUMN_COLLECTION_NAME,
   COLUMN_COLLECTION_SCHEMA,
   createNew,
   findOneById,
   pushCardOrderIds,
-  update
+  update,
+  deleteOnebyId
 }
