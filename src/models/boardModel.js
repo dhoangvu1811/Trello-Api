@@ -119,7 +119,6 @@ const update = async (boardId, updateData) => {
         delete updateData[fieldName]
       }
     })
-    console.log('updateData', updateData)
 
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
