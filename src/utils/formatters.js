@@ -1,3 +1,5 @@
+import { pick } from 'lodash'
+
 //Convert a String to Slug
 export const slugify = (val) => {
   if (!val) return ''
@@ -9,4 +11,20 @@ export const slugify = (val) => {
     .replace(/[^a-z0-9 -]/g, '') // remove non-alphanumeric characters
     .replace(/\s+/g, '-') // replace spaces with hyphens
     .replace(/-+/g, '-') // remove consecutive hyphens
+}
+
+//Lấy một vài dữ liệu cụ thể trong user để tránh trả về các dữ liệu nhạy cảm
+export const pickUser = (user) => {
+  if (!user) return {}
+  return pick(user, [
+    '_id',
+    'email',
+    'username',
+    'displayname',
+    'avatar',
+    'role',
+    'isActive',
+    'createdAt',
+    'updatedAt'
+  ])
 }
