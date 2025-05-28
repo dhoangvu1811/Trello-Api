@@ -1,10 +1,8 @@
 import Joi from 'joi'
-import { ObjectId, ReturnDocument } from 'mongodb'
+import { ObjectId } from 'mongodb'
 import { GET_DB } from '~/config/mongodb'
 import { EMAIL_RULE, EMAIL_RULE_MESSAGE } from '~/utils/validators'
 import { USER_ROLES } from '~/utils/constants'
-import { columnModel } from '~/models/columnModel'
-import { cardModel } from '~/models/cardModel'
 
 //Define Collection (Name & Schema)
 const USER_COLLECTION_NAME = 'users'
