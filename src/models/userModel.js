@@ -12,8 +12,8 @@ const USER_COLLECTION_SCHEMA = Joi.object({
     .pattern(EMAIL_RULE)
     .message(EMAIL_RULE_MESSAGE),
   password: Joi.string().required(),
-  username: Joi.string().required().trim().strict(),
-  displayname: Joi.string().required().trim().strict(),
+  userName: Joi.string().required().trim().strict(),
+  displayName: Joi.string().required().trim().strict(),
   avatar: Joi.string().default(null),
   role: Joi.string()
     .valid(USER_ROLES.ADMIN, USER_ROLES.CLIENT)
