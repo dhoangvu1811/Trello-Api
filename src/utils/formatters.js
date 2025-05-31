@@ -19,8 +19,8 @@ export const pickUser = (user) => {
   return pick(user, [
     '_id',
     'email',
-    'username',
-    'displayname',
+    'userName',
+    'displayName',
     'avatar',
     'role',
     'isActive',
