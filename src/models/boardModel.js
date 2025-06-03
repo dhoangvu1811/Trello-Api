@@ -39,13 +39,17 @@ const validateBeforeCreate = async (data) => {
   })
 }
 
-const createNew = async (data) => {
+const createNew = async (userId, data) => {
   try {
     const validDate = await validateBeforeCreate(data)
+    const newBoardToAdd = {
+      ...validDate,
+      ownerIds: [new ObjectId(userId)]
+    }
 
     const createdBoard = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
-      .insertOne(validDate)
+      .insertOne(newBoardToAdd)
 
     return createdBoard
   } catch (error) {
@@ -67,16 +71,24 @@ const findOneById = async (boardId) => {
   }
 }
 
-const getDetails = async (boardId) => {
+const getDetails = async (userId, boardId) => {
   try {
+    const queryCondition = [
+      { _id: new ObjectId(boardId) },
+      { _destroy: false },
+      {
+        $or: [
+          { ownerIds: { $all: [new ObjectId(userId)] } },
+          { memberIds: { $all: [new ObjectId(userId)] } }
+        ]
+      }
+    ]
+
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
       .aggregate([
         {
-          $match: {
-            _id: new ObjectId(boardId),
-            _destroy: false
-          }
+          $match: { $and: queryCondition }
         },
         {
           $lookup: {
