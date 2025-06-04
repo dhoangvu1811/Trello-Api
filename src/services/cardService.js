@@ -1,5 +1,4 @@
 /* eslint-disable no-useless-catch */
-import { GET_DB } from '~/config/mongodb'
 import { cardModel } from '~/models/cardModel'
 import { columnModel } from '~/models/columnModel'
 
@@ -24,7 +23,24 @@ const createNew = async (reqBody) => {
     throw error
   }
 }
+const update = async (cardId, reqBody) => {
+  try {
+    // Xử lý logic
+    const updateData = {
+      ...reqBody,
+      updatedAt: Date.now()
+    }
+
+    //Gọi tới model để xử lý lưu bản ghi trong DB
+    const updatedCard = await cardModel.update(cardId, updateData)
+
+    return updatedCard
+  } catch (error) {
+    throw error
+  }
+}
 
 export const cardService = {
-  createNew
+  createNew,
+  update
 }
