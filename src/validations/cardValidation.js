@@ -32,7 +32,12 @@ const createNew = async (req, res, next) => {
 const update = async (req, res, next) => {
   const correctCondition = Joi.object({
     title: Joi.string().min(3).max(50).trim().strict(),
-    description: Joi.string().optional()
+    description: Joi.string().optional(),
+    commentToAdd: Joi.object({
+      userAvatar: Joi.string().uri().required(),
+      userDisplayName: Joi.string().min(2).max(30).trim().required(),
+      content: Joi.string().min(3).max(50).trim().strict().required()
+    })
   })
 
   try {
