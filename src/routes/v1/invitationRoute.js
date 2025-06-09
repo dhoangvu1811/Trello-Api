@@ -5,6 +5,11 @@ import { invitationValidation } from '~/validations/invitationValidation'
 
 const Route = express.Router()
 
+Route.route('/').get(
+  authMiddleware.isAuthorized,
+  invitationController.getInvitations
+)
+
 Route.route('/board').post(
   authMiddleware.isAuthorized,
   invitationValidation.createNewBoardInvitation,
