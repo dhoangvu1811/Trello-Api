@@ -16,4 +16,9 @@ Route.route('/board').post(
   invitationController.createNewBoardInvitation
 )
 
+Route.route('/board/:invitationId').put(
+  authMiddleware.isAuthorized,
+  invitationController.updateBoardInvitation
+)
+
 export const invitationRoute = Route

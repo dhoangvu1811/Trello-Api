@@ -155,6 +155,22 @@ const pushColumnOrderIds = async (column) => {
   }
 }
 
+const pushMembersIds = async (boardId, userId) => {
+  try {
+    const result = await GET_DB()
+      .collection(BOARD_COLLECTION_NAME)
+      .findOneAndUpdate(
+        { _id: new ObjectId(boardId) },
+        { $push: { memberIds: new ObjectId(userId) } },
+        { returnDocument: 'after' }
+      )
+
+    return result
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 //Lấy 1 phẩn tử trong mảng columnOrderIds ra và xoá đi
 const pullColumnOrderIds = async (column) => {
   try {
@@ -263,5 +279,6 @@ export const boardModel = {
   pushColumnOrderIds,
   update,
   pullColumnOrderIds,
-  getBoards
+  getBoards,
+  pushMembersIds
 }
