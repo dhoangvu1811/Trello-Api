@@ -26,8 +26,26 @@ const getInvitations = async (req, res, next) => {
     next(error)
   }
 }
+const updateBoardInvitation = async (req, res, next) => {
+  try {
+    const userId = req.jwtDecoded._id
+    const { invitationId } = req.params
+    const { status } = req.body
+
+    const updatedInvitations = await invitationService.updateBoardInvitation(
+      userId,
+      invitationId,
+      status
+    )
+
+    res.status(StatusCodes.OK).json(updatedInvitations)
+  } catch (error) {
+    next(error)
+  }
+}
 
 export const invitationController = {
   createNewBoardInvitation,
-  getInvitations
+  getInvitations,
+  updateBoardInvitation
 }
