@@ -78,6 +78,11 @@ const login = async (reqBody) => {
   try {
     //Query user trong DB
     const existUser = await userModel.findOneByEmail(reqBody.email)
+    console.log('🚀 ~ login ~ existUser:', existUser)
+    console.log(
+      '🚀 ~ login ~ bcryptjs.compareSync(reqBody.password, existUser.password:',
+      bcryptjs.compareSync(reqBody.password, existUser.password)
+    )
 
     // Các bước kiểm tra cần thiết
     if (!existUser)
@@ -87,6 +92,7 @@ const login = async (reqBody) => {
         StatusCodes.NOT_ACCEPTABLE,
         'Your account is not active!'
       )
+
     if (!bcryptjs.compareSync(reqBody.password, existUser.password)) {
       throw new ApiError(
         StatusCodes.NOT_ACCEPTABLE,

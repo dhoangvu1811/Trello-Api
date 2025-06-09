@@ -4,6 +4,8 @@ import { GET_DB } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 
 import { BOARD_INVITATION_STATUS, INVITATION_TYPES } from '~/utils/constants'
+import { userModel } from './userModel'
+import { boardModel } from './boardModel'
 
 //Define Collection (Name & Schema)
 const INVITATION_COLLECTION_NAME = 'invitations'
@@ -128,10 +130,60 @@ const update = async (invitationId, updateData) => {
   }
 }
 
+// Query tổng hợp (aggregate) để những bản ghi invitation thuộc về một user cụ thể
+const findByUser = async (userId) => {
+  try {
+    const queryCondition = [
+      { inviteeId: new ObjectId(userId) }, // Tìm theo người được mời chính là người đang thực hiện request này
+      { _destroy: false }
+    ]
+
+    const results = await GET_DB()
+      .collection(INVITATION_COLLECTION_NAME)
+      .aggregate([
+        {
+          $match: { $and: queryCondition }
+        },
+        {
+          $lookup: {
+            from: userModel.USER_COLLECTION_NAME,
+            localField: 'inviterId', // Người đi mời
+            foreignField: '_id',
+            as: 'inviter',
+            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+          }
+        },
+        {
+          $lookup: {
+            from: userModel.USER_COLLECTION_NAME,
+            localField: 'inviteeId', // Người được mời
+            foreignField: '_id',
+            as: 'invitee',
+            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+          }
+        },
+        {
+          $lookup: {
+            from: boardModel.BOARD_COLLECTION_NAME,
+            localField: 'boardInvitation.boardId', // Thông tin của board
+            foreignField: '_id',
+            as: 'board'
+          }
+        }
+      ])
+      .toArray()
+
+    return results
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 export const invitationModel = {
   INVITATION_COLLECTION_NAME,
   INVITATION_COLLECTION_SCHEMA,
   createNewBoardInvitation,
   findOneById,
-  update
+  update,
+  findByUser
 }
