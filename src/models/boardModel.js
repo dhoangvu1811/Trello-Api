@@ -218,7 +218,7 @@ const update = async (boardId, updateData) => {
   }
 }
 
-const getBoards = async (userId, page, itemsPerPage) => {
+const getBoards = async (userId, page, itemsPerPage, queryFilter) => {
   try {
     const queryCondition = [
       { _destroy: false },
@@ -230,6 +230,21 @@ const getBoards = async (userId, page, itemsPerPage) => {
         ]
       }
     ]
+
+    // Xử lý query filter cho từng trường hợp search board
+    if (queryFilter) {
+      Object.keys(queryFilter).forEach((key) => {
+        // // Phân biệt chữ hoa và thường
+        // queryCondition.push({
+        //   [key]: { $regex: queryFilter[key] }
+        // })
+
+        // Không phân biệt
+        queryCondition.push({
+          [key]: { $regex: new RegExp(queryFilter[key], 'i') }
+        })
+      })
+    }
 
     const query = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
