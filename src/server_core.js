@@ -1,0 +1,86 @@
+/* eslint-disable no-console */
+import express from 'express'
+import cors from 'cors'
+import { corsOptions } from '~/config/cors'
+import AsyncExitHook from 'async-exit-hook'
+import { CONNECT_DB, CLOSE_DB } from '~/config/mongodb'
+import { env } from '~/config/environment'
+import { APIs_V1 } from '~/routes/v1'
+import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware'
+import cookieParser from 'cookie-parser'
+import socketIo from 'socket.io'
+import http from 'http'
+import { inviteUserToBoardSocket } from './sockets/inviteUserToBoardSocket'
+
+const START_EXPRESS = () => {
+  const app = express()
+
+  //Fix cái vụ Cache from disk của ExpressJS
+  app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store')
+    next()
+  })
+
+  //Cấu hình Cookie parser
+  app.use(cookieParser())
+
+  //Xử lý cors
+  app.use(cors(corsOptions))
+
+  //Enable req.body json data
+  app.use(express.json())
+
+  //Use APIs V1
+  app.use('/V1', APIs_V1)
+
+  // Middleware xử lý lỗi tập trung
+  app.use(errorHandlingMiddleware)
+
+  // Tạo một server mới bọc app của express để làm real time với socket.io
+  const server = http.createServer(app)
+  // Khởi tạo biến io với server và cors
+  const io = socketIo(server, { cors: corsOptions })
+  io.on('connection', (socket) => {
+    inviteUserToBoardSocket(socket)
+  })
+  //Môi trường production
+  if (env.BUILD_MODE === 'production') {
+    // Dùng server.listen thay vì app.listen vì lúc này server đã bao gồm express app và đã config socket.io
+    // TRÊN RENDER: bắt buộc phải dùng process.env.PORT do nền tảng tự cấp
+    server.listen(process.env.PORT, () => {
+      console.log(
+        `3. PRODUCTION Hello ${env.AUTHOR}, I am running at PORT: ${process.env.PORT}`
+      )
+    })
+  } else {
+    //Môi trường Local dev
+    server.listen(env.PORT, env.HOST, () => {
+      console.log(
+        `3. LOCAL_DEV Hello ${env.AUTHOR}, I am running at HOST: ${env.HOST} and PORT: ${env.PORT}`
+      )
+    })
+  }
+
+  //Thực hiện các tác vụ cleanup trước khi dừng server
+  AsyncExitHook(() => {
+    console.log('4. Server is shutting down...')
+    CLOSE_DB()
+    console.log('5. Disconnected from MongoDB Cloud Atlas!')
+  })
+}
+
+export const START_SERVER = () => {
+  //Chỉ khi kết nối thành công mới start server
+  //Immediately Invoked / Anonymous Async Functions (IIFE)
+  ;(async () => {
+    try {
+      console.log('1. Connecting to MongoDB Cloud Atlas...')
+      await CONNECT_DB()
+      console.log('2. Connected to MongoDB Cloud Atlas!')
+      START_EXPRESS()
+    } catch (error) {
+      console.error(error)
+      process.exit(0)
+    }
+  })()
+}

@@ -1,11 +1,7 @@
 import { env } from '~/config/environment'
 
 //Những domain được truy cập tới tài nguyên của server
-export const WHITELIST_DOMAINS = [
-  // 'http://localhost:5173'
-  'https://trello-web-nine-flame.vercel.app',
-  'https://tlapp.dhoangvu.me'
-]
+export const WHITELIST_DOMAINS = env.WHITELIST_DOMAINS ? env.WHITELIST_DOMAINS.split(',') : []
 
 export const BOARD_TYPE = {
   PUBLIC: 'public',
@@ -17,10 +13,7 @@ export const USER_ROLES = {
   ADMIN: 'admin'
 }
 
-export const WEBSITE_DOMAIN =
-  env.BUILD_MODE === 'production'
-    ? env.WEBSITE_DOMAIN_PRODUCTION
-    : env.WEBSITE_DOMAIN_DEVELOPMENT
+export const WEBSITE_DOMAIN = env.WEBSITE_DOMAIN
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_ITEMS_PER_PAGE = 12
