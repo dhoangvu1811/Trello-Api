@@ -6,6 +6,11 @@ import ApiError from '~/utils/ApiError'
 // Cấu hình CORS Option trong dự án thực tế
 export const corsOptions = {
   origin: function (origin, callback) {
+    // Cho phép các request không có Origin (như Postman hoặc khi gõ trực tiếp URL lên trình duyệt)
+    if (!origin) {
+      return callback(null, true)
+    }
+
     //Nếu môi trường là local dev cho qua luôn
     if (env.BUILD_MODE === 'dev') {
       return callback(null, true)
