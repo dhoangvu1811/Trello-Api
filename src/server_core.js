@@ -43,36 +43,41 @@ const START_EXPRESS = () => {
   io.on('connection', (socket) => {
     inviteUserToBoardSocket(socket)
   })
-  //Môi trường production
-  if (env.BUILD_MODE === 'production') {
-    // Dùng server.listen thay vì app.listen vì lúc này server đã bao gồm express app và đã config socket.io
-    // TRÊN RENDER: bắt buộc phải dùng process.env.PORT do nền tảng tự cấp
-    server.listen(process.env.PORT, () => {
-      console.log(
-        `3. PRODUCTION Hello ${env.AUTHOR}, I am running at PORT: ${process.env.PORT}`
-      )
-    })
-  } else {
-    //Môi trường Local dev
-    server.listen(env.PORT, env.HOST, () => {
-      console.log(
-        `3. LOCAL_DEV Hello ${env.AUTHOR}, I am running at HOST: ${env.HOST} and PORT: ${env.PORT}`
-      )
-    })
+
+  const port = Number(env.PORT)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('PORT must be an integer between 1 and 65535.')
   }
 
-  //Thực hiện các tác vụ cleanup trước khi dừng server
-  AsyncExitHook(() => {
+  const host = env.BUILD_MODE === 'production' ? '0.0.0.0' : env.HOST
+
+  // Dùng HTTP server để Express và Socket.IO cùng lắng nghe trên một cổng.
+  server.listen(port, host, () => {
+    console.log(
+      `3. ${env.BUILD_MODE.toUpperCase()} Hello ${env.AUTHOR}, I am running at HOST: ${host} and PORT: ${port}`
+    )
+  })
+
+  // Chờ Socket.IO và MongoDB đóng xong trước khi kết thúc tiến trình.
+  AsyncExitHook((done) => {
     console.log('4. Server is shutting down...')
-    CLOSE_DB()
-    console.log('5. Disconnected from MongoDB Cloud Atlas!')
+    io.close(async () => {
+      try {
+        await CLOSE_DB()
+        console.log('5. Disconnected from MongoDB Cloud Atlas!')
+      } catch (error) {
+        console.error('Failed to close MongoDB connection:', error)
+      } finally {
+        done()
+      }
+    })
   })
 }
 
 export const START_SERVER = () => {
   //Chỉ khi kết nối thành công mới start server
   //Immediately Invoked / Anonymous Async Functions (IIFE)
-  ;(async () => {
+  (async () => {
     try {
       console.log('1. Connecting to MongoDB Cloud Atlas...')
       await CONNECT_DB()
@@ -80,7 +85,12 @@ export const START_SERVER = () => {
       START_EXPRESS()
     } catch (error) {
       console.error(error)
-      process.exit(0)
+      try {
+        await CLOSE_DB()
+      } catch (closeError) {
+        console.error('Failed to close MongoDB connection:', closeError)
+      }
+      process.exitCode = 1
     }
   })()
 }

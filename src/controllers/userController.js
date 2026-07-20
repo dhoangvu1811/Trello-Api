@@ -3,6 +3,12 @@ import ms from 'ms'
 import { userService } from '~/services/userService'
 import ApiError from '~/utils/ApiError'
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none'
+}
+
 const createNew = async (req, res, next) => {
   try {
     const createUser = await userService.createNew(req.body)
@@ -30,17 +36,13 @@ const login = async (req, res, next) => {
     /**
      * Xử lý trả về http cookie cho phía trình duyệt
      * đối với maxage - thời gian sống của cookie thì chúng ta để tối đa 14 ngày,tuỳ từng dự án
-     */
+    */
     res.cookie('accessToken', result.accessToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      ...COOKIE_OPTIONS,
       maxAge: ms('14 days')
     })
     res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      ...COOKIE_OPTIONS,
       maxAge: ms('14 days')
     })
 
@@ -53,8 +55,8 @@ const login = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     //Xoá cookie (làm ngược lại so với việc gắn cookie trên hàm login)
-    res.clearCookie('accessToken')
-    res.clearCookie('refreshToken')
+    res.clearCookie('accessToken', COOKIE_OPTIONS)
+    res.clearCookie('refreshToken', COOKIE_OPTIONS)
 
     res.status(StatusCodes.OK).json({ loggedOut: true })
   } catch (error) {
@@ -66,9 +68,7 @@ const refreshToken = async (req, res, next) => {
   try {
     const result = await userService.refreshToken(req.cookies?.refreshToken)
     res.cookie('accessToken', result.accessToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      ...COOKIE_OPTIONS,
       maxAge: ms('14 days')
     })
 

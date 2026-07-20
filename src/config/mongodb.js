@@ -32,5 +32,9 @@ export const GET_DB = () => {
 
 //Đóng kết nối tơí DB
 export const CLOSE_DB = async () => {
+  if (!mongoClientInstance) return
+
   await mongoClientInstance.close()
+  mongoClientInstance = null
+  trelloDatabaseInstance = null
 }
