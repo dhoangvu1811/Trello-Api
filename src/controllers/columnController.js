@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { columnService } from '~/services/columnService'
+import { emitBoardUpdated } from '~/sockets/boardEvents'
 
 const createNew = async (req, res, next) => {
   try {
@@ -9,6 +10,7 @@ const createNew = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.CREATED).json(createColumn)
   } catch (error) {
     next(error)
@@ -25,6 +27,7 @@ const update = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(updatedColumn)
   } catch (error) {
     next(error)
@@ -39,6 +42,7 @@ const deleteItem = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(result)
   } catch (error) {
     next(error)

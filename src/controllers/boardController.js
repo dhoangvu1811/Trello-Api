@@ -6,6 +6,7 @@ import {
   DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_PAGE
 } from '~/utils/constants'
+import { emitBoardUpdated } from '~/sockets/boardEvents'
 
 const createNew = async (req, res, next) => {
   try {
@@ -42,6 +43,7 @@ const update = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(updatedBoard)
   } catch (error) {
     next(error)
@@ -55,6 +57,7 @@ const moveCardToDifferentColumn = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(result)
   } catch (error) {
     next(error)
@@ -88,6 +91,7 @@ const updateMemberRole = async (req, res, next) => {
       req.body.role,
       req.jwtDecoded._id
     )
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(result)
   } catch (error) {
     next(error)

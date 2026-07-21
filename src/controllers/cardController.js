@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { cardService } from '~/services/cardService'
+import { emitBoardUpdated } from '~/sockets/boardEvents'
 
 const createNew = async (req, res, next) => {
   try {
@@ -12,6 +13,7 @@ const createNew = async (req, res, next) => {
       req.jwtDecoded._id
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.CREATED).json(createCard)
   } catch (error) {
     next(error)
@@ -30,6 +32,7 @@ const update = async (req, res, next) => {
       req.authorizedBoard
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(updatedCard)
   } catch (error) {
     next(error)

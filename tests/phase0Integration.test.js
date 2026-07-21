@@ -333,6 +333,7 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
       extraHeaders: token ? { Cookie: `accessToken=${token}` } : {}
     })
   const memberSocket = connect(fixture.users.member.token)
+  const viewerSocket = connect(fixture.users.viewer.token)
   const outsiderSocket = connect(fixture.users.outsider.token)
   const unauthenticatedSocket = connect()
 
@@ -341,7 +342,11 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
       socket.once('connect', resolve)
       socket.once('connect_error', reject)
     })
-  await Promise.all([waitForConnect(memberSocket), waitForConnect(outsiderSocket)])
+  await Promise.all([
+    waitForConnect(memberSocket),
+    waitForConnect(viewerSocket),
+    waitForConnect(outsiderSocket)
+  ])
   const rejected = await new Promise((resolve) => {
     unauthenticatedSocket.once('connect_error', (error) => resolve(error.message))
   })
@@ -350,7 +355,14 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
   const join = (socket) =>
     new Promise((resolve) => socket.emit('FE_JOIN_BOARD', fixture.boardId, resolve))
   assert.deepEqual(await join(memberSocket), { joined: true })
+  assert.deepEqual(await join(viewerSocket), { joined: true })
   assert.deepEqual(await join(outsiderSocket), { joined: false })
+
+  const boardUpdatedEvent = new Promise((resolve) =>
+    viewerSocket.once('BE_BOARD_UPDATED', resolve)
+  )
+  await createColumn(fixture, 'Realtime column')
+  assert.deepEqual(await boardUpdatedEvent, { boardId: fixture.boardId })
 
   const invitationEvent = new Promise((resolve) =>
     outsiderSocket.once('BE_USER_INVITED_TO_BOARD', resolve)
@@ -381,6 +393,7 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
   assert.equal(delivered.boardInvitation.role, 'VIEWER')
 
   memberSocket.disconnect()
+  viewerSocket.disconnect()
   outsiderSocket.disconnect()
   unauthenticatedSocket.disconnect()
 })
