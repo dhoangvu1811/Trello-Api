@@ -3,10 +3,12 @@ import { userValidation } from '~/validations/userValidation'
 import { userController } from '~/controllers/userController'
 import { authMiddleware } from '~/middlewares/authMiddleware'
 import { multerUploadMiddleware } from '~/middlewares/multerUploadMiddleware'
+import { rateLimitMiddleware } from '~/middlewares/rateLimitMiddleware'
 
 const Router = express.Router()
 
 Router.route('/register').post(
+  rateLimitMiddleware.register,
   userValidation.createNew,
   userController.createNew
 )
@@ -16,7 +18,23 @@ Router.route('/verify').put(
   userController.verifyAccount
 )
 
-Router.route('/login').post(userValidation.login, userController.login)
+Router.route('/login').post(
+  rateLimitMiddleware.login,
+  userValidation.login,
+  userController.login
+)
+
+Router.route('/forgot-password').post(
+  rateLimitMiddleware.passwordReset,
+  userValidation.forgotPassword,
+  userController.forgotPassword
+)
+
+Router.route('/reset-password').put(
+  rateLimitMiddleware.passwordReset,
+  userValidation.resetPassword,
+  userController.resetPassword
+)
 
 Router.route('/logout').delete(userController.logout)
 Router.route('/refresh_token').get(userController.refreshToken)

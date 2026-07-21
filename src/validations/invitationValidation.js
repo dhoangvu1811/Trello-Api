@@ -1,7 +1,10 @@
 import Joi from 'joi'
 import { StatusCodes } from 'http-status-codes'
 import ApiError from '~/utils/ApiError'
-import { BOARD_INVITATION_STATUS } from '~/utils/constants'
+import {
+  BOARD_INVITATION_STATUS,
+  BOARD_ROLES
+} from '~/utils/constants'
 import {
   EMAIL_RULE,
   EMAIL_RULE_MESSAGE,
@@ -18,7 +21,8 @@ const createNewBoardInvitation = async (req, res, next) => {
     boardId: Joi.string()
       .required()
       .pattern(OBJECT_ID_RULE)
-      .message(OBJECT_ID_RULE_MESSAGE)
+      .message(OBJECT_ID_RULE_MESSAGE),
+    role: Joi.string().valid(BOARD_ROLES.MEMBER, BOARD_ROLES.VIEWER)
   })
 
   try {

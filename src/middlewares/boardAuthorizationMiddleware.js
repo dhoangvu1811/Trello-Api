@@ -5,7 +5,9 @@ import { cardModel } from '~/models/cardModel'
 import { columnModel } from '~/models/columnModel'
 import ApiError from '~/utils/ApiError'
 import {
-  isBoardMember,
+  canAccessBoard,
+  canEditBoardContent,
+  canManageBoard,
   isBoardOwner
 } from '~/utils/boardPermissions'
 
@@ -29,18 +31,16 @@ const getBoard = async (boardId) => {
   return board
 }
 
-const authorize = (resolveBoard, ownerOnly = false) => {
+const authorize = (resolveBoard, hasPermission) => {
   return async (req, res, next) => {
     try {
       const board = await resolveBoard(req)
       const userId = req.jwtDecoded._id
-      const hasOwnership = isBoardOwner(board, userId)
-      const hasMembership = isBoardMember(board, userId)
 
-      if (!hasOwnership && (ownerOnly || !hasMembership)) {
+      if (!hasPermission(board, userId, req)) {
         throw new ApiError(
           StatusCodes.FORBIDDEN,
-          'You do not have permission to modify this board.'
+          'You do not have permission to perform this board action.'
         )
       }
 
@@ -136,10 +136,34 @@ const resolveCardMove = async (req) => {
 }
 
 export const boardAuthorizationMiddleware = {
-  requireBoardMemberByParam: authorize(resolveBoardParam),
-  requireBoardMemberByBody: authorize(resolveBodyBoard),
-  requireBoardMemberByColumn: authorize(resolveColumnParam),
-  requireBoardMemberByCard: authorize(resolveCardParam),
-  requireBoardMemberForCardMove: authorize(resolveCardMove),
-  requireBoardOwnerByBody: authorize(resolveBodyBoard, true)
+  requireBoardAccessByParam: authorize(resolveBoardParam, canAccessBoard),
+  requireBoardContentEditorByBody: authorize(
+    resolveBodyBoard,
+    canEditBoardContent
+  ),
+  requireBoardContentEditorByColumn: authorize(
+    resolveColumnParam,
+    canEditBoardContent
+  ),
+  requireBoardContentEditorByCard: authorize(
+    resolveCardParam,
+    canEditBoardContent
+  ),
+  requireBoardContentEditorForCardMove: authorize(
+    resolveCardMove,
+    canEditBoardContent
+  ),
+  requireBoardManagerByBody: authorize(resolveBodyBoard, canManageBoard),
+  requireBoardOwnerByParam: authorize(resolveBoardParam, isBoardOwner),
+  requireBoardUpdatePermission: authorize(
+    resolveBoardParam,
+    (board, userId, req) => {
+      const fields = Object.keys(req.body)
+      const isContentOnlyUpdate =
+        fields.length === 1 && fields[0] === 'columnOrderIds'
+      return isContentOnlyUpdate
+        ? canEditBoardContent(board, userId)
+        : canManageBoard(board, userId)
+    }
+  )
 }

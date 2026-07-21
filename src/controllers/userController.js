@@ -94,11 +94,33 @@ const update = async (req, res, next) => {
   }
 }
 
+const forgotPassword = async (req, res, next) => {
+  try {
+    await userService.forgotPassword(req.body.email)
+    res.status(StatusCodes.OK).json({
+      message: 'If that account exists, a password reset email has been sent.'
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+const resetPassword = async (req, res, next) => {
+  try {
+    await userService.resetPassword(req.body.token, req.body.password)
+    res.status(StatusCodes.OK).json({ passwordReset: true })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const userController = {
   createNew,
   verifyAccount,
   login,
   logout,
   refreshToken,
-  update
+  update,
+  forgotPassword,
+  resetPassword
 }

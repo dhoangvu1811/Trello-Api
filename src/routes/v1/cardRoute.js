@@ -10,7 +10,7 @@ const Router = express.Router()
 Router.route('/').post(
   authMiddleware.isAuthorized,
   cardValidation.createNew,
-  boardAuthorizationMiddleware.requireBoardMemberByBody,
+  boardAuthorizationMiddleware.requireBoardContentEditorByBody,
   cardController.createNew
 )
 
@@ -18,7 +18,7 @@ Router.route('/:id').put(
   authMiddleware.isAuthorized,
   multerUploadMiddleware.upload.single('cardCover'),
   cardValidation.update,
-  boardAuthorizationMiddleware.requireBoardMemberByCard,
+  boardAuthorizationMiddleware.requireBoardContentEditorByCard,
   cardController.update
 )
 

@@ -6,6 +6,8 @@ import {
   ACTIVITY_ENTITY_TYPES
 } from '~/utils/constants'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
+import { pagingSkipValue } from '~/utils/algorithms'
+import { userModel } from '~/models/userModel'
 
 const ACTIVITY_COLLECTION_NAME = 'activities'
 const ACTIVITY_COLLECTION_SCHEMA = Joi.object({
@@ -47,8 +49,43 @@ const createNew = async (data, session) => {
     .insertOne(newActivity, SESSION_OPTIONS(session))
 }
 
+const findByBoardId = async (boardId, page, itemsPerPage) => {
+  const [result] = await GET_DB()
+    .collection(ACTIVITY_COLLECTION_NAME)
+    .aggregate([
+      { $match: { boardId: new ObjectId(boardId) } },
+      { $sort: { createdAt: -1, _id: -1 } },
+      {
+        $facet: {
+          activities: [
+            { $skip: pagingSkipValue(page, itemsPerPage) },
+            { $limit: itemsPerPage },
+            {
+              $lookup: {
+                from: userModel.USER_COLLECTION_NAME,
+                localField: 'actorId',
+                foreignField: '_id',
+                as: 'actor',
+                pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
+              }
+            },
+            { $set: { actor: { $first: '$actor' } } }
+          ],
+          total: [{ $count: 'count' }]
+        }
+      }
+    ])
+    .toArray()
+
+  return {
+    activities: result?.activities || [],
+    totalActivities: result?.total[0]?.count || 0
+  }
+}
+
 export const activityModel = {
   ACTIVITY_COLLECTION_NAME,
   ACTIVITY_COLLECTION_SCHEMA,
-  createNew
+  createNew,
+  findByBoardId
 }

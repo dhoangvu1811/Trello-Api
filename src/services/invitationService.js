@@ -8,6 +8,7 @@ import {
   ACTIVITY_ACTIONS,
   ACTIVITY_ENTITY_TYPES,
   BOARD_INVITATION_STATUS,
+  BOARD_ROLES,
   INVITATION_TYPES
 } from '~/utils/constants'
 import { pickUser } from '~/utils/formatters'
@@ -46,7 +47,8 @@ const createNewBoardInvitation = async (reqBody, inviterId) => {
         type: INVITATION_TYPES.BOARD_INVITATION,
         boardInvitation: {
           boardId: board._id.toString(),
-          status: BOARD_INVITATION_STATUS.PENDING
+          status: BOARD_INVITATION_STATUS.PENDING,
+          role: reqBody.role || BOARD_ROLES.MEMBER
         }
       }
       const createdInvitation =
@@ -156,6 +158,7 @@ const updateBoardInvitation = async (userId, invitationId, status) => {
         const updatedBoard = await boardModel.pushMembersIds(
           boardId,
           userId,
+          invitation.boardInvitation.role || BOARD_ROLES.MEMBER,
           session
         )
         if (!updatedBoard)

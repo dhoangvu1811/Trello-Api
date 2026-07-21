@@ -3,7 +3,11 @@ import { ObjectId } from 'mongodb'
 import { GET_DB, SESSION_OPTIONS } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 
-import { BOARD_INVITATION_STATUS, INVITATION_TYPES } from '~/utils/constants'
+import {
+  BOARD_INVITATION_STATUS,
+  BOARD_ROLES,
+  INVITATION_TYPES
+} from '~/utils/constants'
 import { userModel } from './userModel'
 import { boardModel } from './boardModel'
 
@@ -29,7 +33,10 @@ const INVITATION_COLLECTION_SCHEMA = Joi.object({
       .message(OBJECT_ID_RULE_MESSAGE),
     status: Joi.string()
       .required()
-      .valid(...Object.values(BOARD_INVITATION_STATUS))
+      .valid(...Object.values(BOARD_INVITATION_STATUS)),
+    role: Joi.string()
+      .valid(BOARD_ROLES.MEMBER, BOARD_ROLES.VIEWER)
+      .default(BOARD_ROLES.MEMBER)
   }).optional(),
 
   createdAt: Joi.date().timestamp('javascript').default(Date.now),
@@ -149,7 +156,7 @@ const findByUser = async (userId) => {
             localField: 'inviterId', // Người đi mời
             foreignField: '_id',
             as: 'inviter',
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         },
         {
@@ -158,7 +165,7 @@ const findByUser = async (userId) => {
             localField: 'inviteeId', // Người được mời
             foreignField: '_id',
             as: 'invitee',
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         },
         {

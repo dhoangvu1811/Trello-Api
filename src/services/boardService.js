@@ -15,6 +15,7 @@ import {
 import { hasSameIds } from '~/utils/resourceOrder'
 import { WITH_TRANSACTION } from '~/config/mongodb'
 import { activityService } from '~/services/activityService'
+import { getBoardRole } from '~/utils/boardPermissions'
 
 const createNew = async (userId, reqBody) => {
   try {
@@ -56,6 +57,15 @@ const getDetails = async (userId, boardId) => {
     }
 
     const resBoard = cloneDeep(board)
+    resBoard.currentUserRole = getBoardRole(board, userId)
+    resBoard.owners = resBoard.owners.map((owner) => ({
+      ...owner,
+      boardRole: getBoardRole(board, owner._id)
+    }))
+    resBoard.members = resBoard.members.map((member) => ({
+      ...member,
+      boardRole: getBoardRole(board, member._id)
+    }))
     //Đưa card về đúng column (dữ liệu chưa đúng vì card nằm cùng cấp với column)
     //method equals được mongoDb support
     resBoard.columns.forEach((column) => {
@@ -219,10 +229,47 @@ const getBoards = async (userId, page, itemsPerPage, queryFilter) => {
   }
 }
 
+const updateMemberRole = async (
+  boardId,
+  memberId,
+  role,
+  actorId
+) => {
+  return await WITH_TRANSACTION(async (session) => {
+    const updatedBoard = await boardModel.setMemberRole(
+      boardId,
+      memberId,
+      role,
+      session
+    )
+    if (!updatedBoard) {
+      throw new ApiError(
+        StatusCodes.UNPROCESSABLE_ENTITY,
+        'The target user is not a non-owner member of this board.'
+      )
+    }
+
+    await activityService.createNew(
+      {
+        boardId,
+        actorId,
+        action: ACTIVITY_ACTIONS.BOARD_MEMBER_ROLE_CHANGED,
+        entityType: ACTIVITY_ENTITY_TYPES.BOARD,
+        entityId: boardId,
+        metadata: { memberId, role }
+      },
+      session
+    )
+
+    return { memberId, role }
+  })
+}
+
 export const boardService = {
   createNew,
   getDetails,
   update,
   moveCardToDifferentColumn,
-  getBoards
+  getBoards,
+  updateMemberRole
 }

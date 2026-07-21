@@ -3,6 +3,7 @@ import { invitationController } from '~/controllers/invitationController'
 import { authMiddleware } from '~/middlewares/authMiddleware'
 import { invitationValidation } from '~/validations/invitationValidation'
 import { boardAuthorizationMiddleware } from '~/middlewares/boardAuthorizationMiddleware'
+import { rateLimitMiddleware } from '~/middlewares/rateLimitMiddleware'
 
 const Route = express.Router()
 
@@ -13,8 +14,9 @@ Route.route('/').get(
 
 Route.route('/board').post(
   authMiddleware.isAuthorized,
+  rateLimitMiddleware.invitation,
   invitationValidation.createNewBoardInvitation,
-  boardAuthorizationMiddleware.requireBoardOwnerByBody,
+  boardAuthorizationMiddleware.requireBoardManagerByBody,
   invitationController.createNewBoardInvitation
 )
 

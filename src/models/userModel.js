@@ -6,6 +6,17 @@ import { USER_ROLES } from '~/utils/constants'
 
 //Define Collection (Name & Schema)
 const USER_COLLECTION_NAME = 'users'
+const PUBLIC_USER_PROJECTION = {
+  _id: 1,
+  email: 1,
+  userName: 1,
+  displayName: 1,
+  avatar: 1,
+  role: 1,
+  isActive: 1,
+  createdAt: 1,
+  updatedAt: 1
+}
 const USER_COLLECTION_SCHEMA = Joi.object({
   email: Joi.string()
     .required()
@@ -20,6 +31,10 @@ const USER_COLLECTION_SCHEMA = Joi.object({
     .default(USER_ROLES.CLIENT),
   isActive: Joi.boolean().default(false),
   verifyToken: Joi.string(),
+  passwordResetTokenHash: Joi.string().allow(null),
+  passwordResetExpiresAt: Joi.date()
+    .timestamp('javascript')
+    .allow(null),
   createdAt: Joi.date().timestamp('javascript').default(Date.now),
   updatedAt: Joi.date().timestamp('javascript').default(null),
   _destroy: Joi.boolean().default(false)
@@ -73,6 +88,32 @@ const findOneByEmail = async (emailValue) => {
   }
 }
 
+const resetPassword = async (tokenHash, passwordHash) => {
+  try {
+    return await GET_DB()
+      .collection(USER_COLLECTION_NAME)
+      .findOneAndUpdate(
+        {
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { $gt: Date.now() },
+          isActive: true,
+          _destroy: false
+        },
+        {
+          $set: {
+            password: passwordHash,
+            passwordResetTokenHash: null,
+            passwordResetExpiresAt: null,
+            updatedAt: Date.now()
+          }
+        },
+        { returnDocument: 'after' }
+      )
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 const update = async (userId, updateData) => {
   try {
     // Lọc những trường không cho phép cập nhật
@@ -99,9 +140,11 @@ const update = async (userId, updateData) => {
 
 export const userModel = {
   USER_COLLECTION_NAME,
+  PUBLIC_USER_PROJECTION,
   USER_COLLECTION_SCHEMA,
   createNew,
   findOneById,
   findOneByEmail,
+  resetPassword,
   update
 }

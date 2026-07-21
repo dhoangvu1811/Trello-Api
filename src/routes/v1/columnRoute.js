@@ -9,7 +9,7 @@ const Router = express.Router()
 Router.route('/').post(
   authMiddleware.isAuthorized,
   columnValidation.createNew,
-  boardAuthorizationMiddleware.requireBoardMemberByBody,
+  boardAuthorizationMiddleware.requireBoardContentEditorByBody,
   columnController.createNew
 )
 
@@ -17,13 +17,13 @@ Router.route('/:id')
   .put(
     authMiddleware.isAuthorized,
     columnValidation.update,
-    boardAuthorizationMiddleware.requireBoardMemberByColumn,
+    boardAuthorizationMiddleware.requireBoardContentEditorByColumn,
     columnController.update
   )
   .delete(
     authMiddleware.isAuthorized,
     columnValidation.deleteItem,
-    boardAuthorizationMiddleware.requireBoardMemberByColumn,
+    boardAuthorizationMiddleware.requireBoardContentEditorByColumn,
     columnController.deleteItem
   )
 

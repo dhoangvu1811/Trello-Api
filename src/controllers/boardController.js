@@ -1,6 +1,11 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { boardService } from '~/services/boardService'
+import { activityService } from '~/services/activityService'
+import {
+  DEFAULT_ITEMS_PER_PAGE,
+  DEFAULT_PAGE
+} from '~/utils/constants'
 
 const createNew = async (req, res, next) => {
   try {
@@ -75,10 +80,39 @@ const getBoards = async (req, res, next) => {
   }
 }
 
+const updateMemberRole = async (req, res, next) => {
+  try {
+    const result = await boardService.updateMemberRole(
+      req.params.id,
+      req.params.userId,
+      req.body.role,
+      req.jwtDecoded._id
+    )
+    res.status(StatusCodes.OK).json(result)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const getActivities = async (req, res, next) => {
+  try {
+    const result = await activityService.getByBoardId(
+      req.params.id,
+      req.query.page || DEFAULT_PAGE,
+      req.query.itemsPerPage || DEFAULT_ITEMS_PER_PAGE
+    )
+    res.status(StatusCodes.OK).json(result)
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const boardController = {
   createNew,
   getDetails,
   update,
   moveCardToDifferentColumn,
-  getBoards
+  getBoards,
+  updateMemberRole,
+  getActivities
 }

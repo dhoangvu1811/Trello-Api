@@ -10,6 +10,11 @@ import { BrevoProvider } from '~/providers/BrevoProvider'
 import { env } from '~/config/environment'
 import { JwtProvider } from '~/providers/JwtProvider'
 import { CloudinaryProvider } from '~/providers/CloudinaryProvider'
+import crypto from 'crypto'
+
+const PASSWORD_RESET_LIFE_MS = 30 * 60 * 1000
+const hashResetToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex')
 
 const createNew = async (reqBody) => {
   try {
@@ -196,10 +201,45 @@ const update = async (userId, reqBody, userAvatarFile) => {
   }
 }
 
+const forgotPassword = async (email) => {
+  const user = await userModel.findOneByEmail(email)
+  if (!user || !user.isActive || user._destroy) return
+
+  const resetToken = crypto.randomBytes(32).toString('hex')
+  await userModel.update(user._id, {
+    passwordResetTokenHash: hashResetToken(resetToken),
+    passwordResetExpiresAt: Date.now() + PASSWORD_RESET_LIFE_MS,
+    updatedAt: Date.now()
+  })
+
+  const resetLink = `${WEBSITE_DOMAIN}/account/reset-password?token=${resetToken}`
+  await BrevoProvider.sendEmail(
+    user.email,
+    'Trello Web MERN: Reset your password',
+    `<h3>Password reset</h3><p>This link expires in 30 minutes:</p><p>${resetLink}</p>`
+  )
+}
+
+const resetPassword = async (token, password) => {
+  const user = await userModel.resetPassword(
+    hashResetToken(token),
+    bcryptjs.hashSync(password, 8)
+  )
+  if (!user) {
+    throw new ApiError(
+      StatusCodes.UNPROCESSABLE_ENTITY,
+      'Password reset token is invalid or expired.'
+    )
+  }
+
+}
+
 export const userService = {
   createNew,
   verifyAccount,
   login,
   refreshToken,
-  update
+  update,
+  forgotPassword,
+  resetPassword
 }

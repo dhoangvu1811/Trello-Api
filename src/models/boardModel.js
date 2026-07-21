@@ -2,7 +2,7 @@ import Joi from 'joi'
 import { ObjectId } from 'mongodb'
 import { GET_DB, SESSION_OPTIONS } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
-import { BOARD_TYPE } from '~/utils/constants'
+import { BOARD_ROLES, BOARD_TYPE } from '~/utils/constants'
 import { columnModel } from '~/models/columnModel'
 import { cardModel } from '~/models/cardModel'
 import { pagingSkipValue } from '~/utils/algorithms'
@@ -28,6 +28,23 @@ const BOARD_COLLECTION_SCHEMA = Joi.object({
   memberIds: Joi.array()
     .items(Joi.string().pattern(OBJECT_ID_RULE).message(OBJECT_ID_RULE_MESSAGE))
     .default([]),
+  memberRoles: Joi.array()
+    .items(
+      Joi.object({
+        userId: Joi.string()
+          .required()
+          .pattern(OBJECT_ID_RULE)
+          .message(OBJECT_ID_RULE_MESSAGE),
+        role: Joi.string()
+          .required()
+          .valid(
+            BOARD_ROLES.ADMIN,
+            BOARD_ROLES.MEMBER,
+            BOARD_ROLES.VIEWER
+          )
+      })
+    )
+    .default([]),
   createdAt: Joi.date().timestamp('javascript').default(Date.now),
   updatedAt: Joi.date().timestamp('javascript').default(null),
   _destroy: Joi.boolean().default(false)
@@ -38,7 +55,8 @@ const INVALID_UPDATE_FIELDS = [
   '_id',
   'createdAt',
   'ownerIds',
-  'memberIds'
+  'memberIds',
+  'memberRoles'
 ]
 
 const validateBeforeCreate = async (data) => {
@@ -123,7 +141,7 @@ const getDetails = async (userId, boardId) => {
             as: 'owners',
             // pipeline trong lookup là để xử lý một hoặc nhiều luồng cần thiết
             // $project để chỉ định vài field không muốn lấy về bằng cách gán nó giá trị bằng 0
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         },
         {
@@ -132,7 +150,7 @@ const getDetails = async (userId, boardId) => {
             localField: 'memberIds',
             foreignField: '_id',
             as: 'members',
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         }
       ])
@@ -161,13 +179,23 @@ const pushColumnOrderIds = async (column, session) => {
   }
 }
 
-const pushMembersIds = async (boardId, userId, session) => {
+const pushMembersIds = async (
+  boardId,
+  userId,
+  role = BOARD_ROLES.MEMBER,
+  session
+) => {
   try {
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
       .findOneAndUpdate(
         { _id: new ObjectId(boardId) },
-        { $addToSet: { memberIds: new ObjectId(userId) } },
+        {
+          $addToSet: {
+            memberIds: new ObjectId(userId),
+            memberRoles: { userId: new ObjectId(userId), role }
+          }
+        },
         SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
@@ -175,6 +203,28 @@ const pushMembersIds = async (boardId, userId, session) => {
   } catch (error) {
     throw new Error(error)
   }
+}
+
+const setMemberRole = async (boardId, userId, role, session) => {
+  const board = await findOneById(boardId, session)
+  if (!board) return null
+
+  const normalizedUserId = userId.toString()
+  const memberRoles = (board.memberRoles || []).filter(
+    (memberRole) => memberRole.userId.toString() !== normalizedUserId
+  )
+  memberRoles.push({ userId: new ObjectId(normalizedUserId), role })
+
+  return await GET_DB()
+    .collection(BOARD_COLLECTION_NAME)
+    .findOneAndUpdate(
+      {
+        _id: new ObjectId(boardId),
+        memberIds: new ObjectId(normalizedUserId)
+      },
+      { $set: { memberRoles, updatedAt: Date.now() } },
+      SESSION_OPTIONS(session, { returnDocument: 'after' })
+    )
 }
 
 //Lấy 1 phẩn tử trong mảng columnOrderIds ra và xoá đi
@@ -301,5 +351,6 @@ export const boardModel = {
   update,
   pullColumnOrderIds,
   getBoards,
-  pushMembersIds
+  pushMembersIds,
+  setMemberRole
 }
