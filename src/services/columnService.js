@@ -4,6 +4,7 @@ import { boardModel } from '~/models/boardModel'
 import { cardModel } from '~/models/cardModel'
 import { columnModel } from '~/models/columnModel'
 import ApiError from '~/utils/ApiError'
+import { hasSameIds } from '~/utils/resourceOrder'
 
 const createNew = async (reqBody) => {
   try {
@@ -32,6 +33,16 @@ const createNew = async (reqBody) => {
 
 const update = async (columnId, reqBody) => {
   try {
+    if (reqBody.cardOrderIds) {
+      const cards = await cardModel.findByColumnIds([columnId])
+      if (!hasSameIds(cards.map((card) => card._id), reqBody.cardOrderIds)) {
+        throw new ApiError(
+          StatusCodes.UNPROCESSABLE_ENTITY,
+          'Card order must contain every card in this column exactly once.'
+        )
+      }
+    }
+
     const updateData = {
       ...reqBody,
       updatedAt: Date.now()

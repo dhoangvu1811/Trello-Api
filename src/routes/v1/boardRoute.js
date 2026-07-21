@@ -2,6 +2,7 @@ import express from 'express'
 import { boardValidation } from '~/validations/boardValidation'
 import { boardController } from '~/controllers/boardController'
 import { authMiddleware } from '~/middlewares/authMiddleware'
+import { boardAuthorizationMiddleware } from '~/middlewares/boardAuthorizationMiddleware'
 
 const Router = express.Router()
 
@@ -18,6 +19,7 @@ Router.route('/:id')
   .put(
     authMiddleware.isAuthorized,
     boardValidation.update,
+    boardAuthorizationMiddleware.requireBoardMemberByParam,
     boardController.update
   )
 
@@ -25,6 +27,7 @@ Router.route('/:id')
 Router.route('/supports/moving_card').put(
   authMiddleware.isAuthorized,
   boardValidation.moveCardToDifferentColumn,
+  boardAuthorizationMiddleware.requireBoardMemberForCardMove,
   boardController.moveCardToDifferentColumn
 )
 

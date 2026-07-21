@@ -7,6 +7,7 @@ import { cloneDeep } from 'lodash'
 import { columnModel } from '~/models/columnModel'
 import { cardModel } from '~/models/cardModel'
 import { DEFAULT_ITEMS_PER_PAGE, DEFAULT_PAGE } from '~/utils/constants'
+import { hasSameIds } from '~/utils/resourceOrder'
 
 const createNew = async (userId, reqBody) => {
   try {
@@ -57,6 +58,17 @@ const getDetails = async (userId, boardId) => {
 }
 const update = async (boardId, reqBody) => {
   try {
+    if (reqBody.columnOrderIds) {
+      const columns = await columnModel.findByBoardId(boardId)
+      const columnIds = columns.map((column) => column._id)
+      if (!hasSameIds(columnIds, reqBody.columnOrderIds)) {
+        throw new ApiError(
+          StatusCodes.UNPROCESSABLE_ENTITY,
+          'Column order must contain every column in this board exactly once.'
+        )
+      }
+    }
+
     const updateData = {
       ...reqBody,
       updatedAt: Date.now()
@@ -70,6 +82,33 @@ const update = async (boardId, reqBody) => {
 }
 const moveCardToDifferentColumn = async (reqBody) => {
   try {
+    const cards = await cardModel.findByColumnIds([
+      reqBody.prevColumnId,
+      reqBody.nextColumnId
+    ])
+    const currentCardId = reqBody.curentCardId
+    const expectedPreviousIds = cards
+      .filter(
+        (card) =>
+          card.columnId.toString() === reqBody.prevColumnId &&
+          card._id.toString() !== currentCardId
+      )
+      .map((card) => card._id)
+    const expectedNextIds = cards
+      .filter((card) => card.columnId.toString() === reqBody.nextColumnId)
+      .map((card) => card._id)
+      .concat(currentCardId)
+
+    if (
+      !hasSameIds(expectedPreviousIds, reqBody.prevCardOderIds) ||
+      !hasSameIds(expectedNextIds, reqBody.nextCardOrderIds)
+    ) {
+      throw new ApiError(
+        StatusCodes.UNPROCESSABLE_ENTITY,
+        'Card order does not match the current board state.'
+      )
+    }
+
     // B1: Cập nhật lại mảng cardOrderIds trong column cũ (xoá đi id của card đã kéo)
     await columnModel.update(reqBody.prevColumnId, {
       cardOrderIds: reqBody.prevCardOderIds,

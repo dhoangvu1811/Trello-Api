@@ -2,6 +2,7 @@ import Joi from 'joi'
 import { StatusCodes } from 'http-status-codes'
 import ApiError from '~/utils/ApiError'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
+import { CARD_MEMBER_ACTIONS } from '~/utils/constants'
 
 const createNew = async (req, res, next) => {
   const correctCondition = Joi.object({
@@ -34,8 +35,6 @@ const update = async (req, res, next) => {
     title: Joi.string().min(3).max(50).trim().strict(),
     description: Joi.string().optional(),
     commentToAdd: Joi.object({
-      userAvatar: Joi.string().uri().required(),
-      userDisplayName: Joi.string().min(2).max(30).trim().required(),
       content: Joi.string().min(3).max(50).trim().strict().required()
     }),
     incommingMemberInfo: Joi.object({
@@ -43,7 +42,9 @@ const update = async (req, res, next) => {
         .required()
         .pattern(OBJECT_ID_RULE)
         .message(OBJECT_ID_RULE_MESSAGE),
-      action: Joi.string().required()
+      action: Joi.string()
+        .required()
+        .valid(CARD_MEMBER_ACTIONS.ADD, CARD_MEMBER_ACTIONS.REMOVE)
     })
   })
 

@@ -87,6 +87,20 @@ const findOneById = async (cardId) => {
   }
 }
 
+const findByColumnIds = async (columnIds) => {
+  try {
+    return await GET_DB()
+      .collection(CARD_COLLECTION_NAME)
+      .find({
+        columnId: { $in: columnIds.map((id) => new ObjectId(id)) },
+        _destroy: false
+      })
+      .toArray()
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 const update = async (cardId, updateData) => {
   try {
     // Lọc những trường không cho phép cập nhật
@@ -151,7 +165,7 @@ const updateMembers = async (cardId, incommingMemberInfo) => {
     let updateCondition = {}
     if (incommingMemberInfo.action === CARD_MEMBER_ACTIONS.ADD) {
       updateCondition = {
-        $push: { memberIds: new ObjectId(incommingMemberInfo.userId) }
+        $addToSet: { memberIds: new ObjectId(incommingMemberInfo.userId) }
       }
     }
     if (incommingMemberInfo.action === CARD_MEMBER_ACTIONS.REMOVE) {
@@ -177,6 +191,7 @@ export const cardModel = {
   CARD_COLLECTION_SCHEMA,
   createNew,
   findOneById,
+  findByColumnIds,
   update,
   deleteManyByColumnId,
   unShiftNewComment,

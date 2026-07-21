@@ -63,6 +63,17 @@ const findOneById = async (columnId) => {
   }
 }
 
+const findByBoardId = async (boardId) => {
+  try {
+    return await GET_DB()
+      .collection(COLUMN_COLLECTION_NAME)
+      .find({ boardId: new ObjectId(boardId), _destroy: false })
+      .toArray()
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
 const pushCardOrderIds = async (card) => {
   try {
     const result = await GET_DB()
@@ -121,6 +132,7 @@ export const columnModel = {
   COLUMN_COLLECTION_SCHEMA,
   createNew,
   findOneById,
+  findByBoardId,
   pushCardOrderIds,
   update,
   deleteOnebyId

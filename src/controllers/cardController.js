@@ -23,7 +23,8 @@ const update = async (req, res, next) => {
       cardId,
       req.body,
       cardCoverFile,
-      userInfo
+      userInfo,
+      req.authorizedBoard
     )
 
     res.status(StatusCodes.OK).json(updatedCard)

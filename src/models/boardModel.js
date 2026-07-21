@@ -34,7 +34,12 @@ const BOARD_COLLECTION_SCHEMA = Joi.object({
 })
 
 // Chỉ định ra các trường không cho phép cập nhật trong hàm update
-const INVALID_UPDATE_FIELDS = ['_id', 'createdAt']
+const INVALID_UPDATE_FIELDS = [
+  '_id',
+  'createdAt',
+  'ownerIds',
+  'memberIds'
+]
 
 const validateBeforeCreate = async (data) => {
   return await BOARD_COLLECTION_SCHEMA.validateAsync(data, {
@@ -161,7 +166,7 @@ const pushMembersIds = async (boardId, userId) => {
       .collection(BOARD_COLLECTION_NAME)
       .findOneAndUpdate(
         { _id: new ObjectId(boardId) },
-        { $push: { memberIds: new ObjectId(userId) } },
+        { $addToSet: { memberIds: new ObjectId(userId) } },
         { returnDocument: 'after' }
       )
 

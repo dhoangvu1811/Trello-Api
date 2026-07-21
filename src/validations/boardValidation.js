@@ -43,11 +43,7 @@ const update = async (req, res, next) => {
 
   try {
     //set abortEarly: false trong có nhiều lỗi validation thì trả về tất cả lỗi
-    // allowUnknown: true cho phép đẩy các field ngoài các field đã định nghĩa trên correctCondition
-    await correctCondition.validateAsync(req.body, {
-      abortEarly: false,
-      allowUnknown: true
-    })
+    await correctCondition.validateAsync(req.body, { abortEarly: false })
     next()
   } catch (error) {
     const errorMessage = new Error(error).message

@@ -6,6 +6,7 @@ import { userModel } from '~/models/userModel'
 import ApiError from '~/utils/ApiError'
 import { BOARD_INVITATION_STATUS, INVITATION_TYPES } from '~/utils/constants'
 import { pickUser } from '~/utils/formatters'
+import { getBoardUserIds } from '~/utils/boardPermissions'
 
 const createNewBoardInvitation = async (reqBody, inviterId) => {
   try {
@@ -20,6 +21,14 @@ const createNewBoardInvitation = async (reqBody, inviterId) => {
       throw new ApiError(
         StatusCodes.NOT_FOUND,
         'Inviter,Invitee or Board not found!'
+      )
+    }
+
+    const boardUserIds = getBoardUserIds(board)
+    if (boardUserIds.includes(invitee._id.toString())) {
+      throw new ApiError(
+        StatusCodes.CONFLICT,
+        'This user is already a member of the board.'
       )
     }
 
@@ -83,6 +92,23 @@ const updateBoardInvitation = async (userId, invitationId, status) => {
     if (!getInvitation)
       throw new ApiError(StatusCodes.NOT_FOUND, 'Invitation not found! ')
 
+    if (getInvitation.inviteeId.toString() !== userId) {
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        'You cannot update another user\'s invitation.'
+      )
+    }
+
+    if (
+      getInvitation.boardInvitation.status !==
+      BOARD_INVITATION_STATUS.PENDING
+    ) {
+      throw new ApiError(
+        StatusCodes.CONFLICT,
+        'This invitation has already been resolved.'
+      )
+    }
+
     const boardId = getInvitation.boardInvitation.boardId
     const getBoard = await boardModel.findOneById(boardId)
     if (!getBoard)
@@ -90,10 +116,7 @@ const updateBoardInvitation = async (userId, invitationId, status) => {
 
     // Kiểm tra xem nếu status là ACCEPTED join board mà user (invitee) đã là owner hoặc member của board r thì trả về lỗi
     // Lưu ý hai mảng ownerIds và memberIds đang ở dạng ObjectId nên chuyển về string để kiểm tra
-    const boardOwnerAndMemberIds = [
-      ...getBoard.ownerIds,
-      ...getBoard.memberIds
-    ].toString()
+    const boardOwnerAndMemberIds = getBoardUserIds(getBoard)
 
     if (
       status === BOARD_INVITATION_STATUS.ACCEPTED &&

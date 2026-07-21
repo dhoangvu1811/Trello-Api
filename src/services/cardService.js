@@ -2,6 +2,11 @@
 import { cardModel } from '~/models/cardModel'
 import { columnModel } from '~/models/columnModel'
 import { CloudinaryProvider } from '~/providers/CloudinaryProvider'
+import { StatusCodes } from 'http-status-codes'
+import ApiError from '~/utils/ApiError'
+import { CARD_MEMBER_ACTIONS } from '~/utils/constants'
+import { getBoardUserIds } from '~/utils/boardPermissions'
+import { userModel } from '~/models/userModel'
 
 const createNew = async (reqBody) => {
   try {
@@ -24,7 +29,13 @@ const createNew = async (reqBody) => {
     throw error
   }
 }
-const update = async (cardId, reqBody, cardCoverFile, userInfo) => {
+const update = async (
+  cardId,
+  reqBody,
+  cardCoverFile,
+  userInfo,
+  authorizedBoard
+) => {
   try {
     // Xử lý logic
     const updateData = {
@@ -44,16 +55,35 @@ const update = async (cardId, reqBody, cardCoverFile, userInfo) => {
         cover: uploadResult.secure_url
       })
     } else if (updateData.commentToAdd) {
-      // Tạo dữ liệu comment để thêm vào DB, cần bổ sung những field cần thiết
+      const commentAuthor = await userModel.findOneById(userInfo._id)
+      if (!commentAuthor) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Comment author not found!')
+      }
+
       const commentData = {
-        ...updateData.commentToAdd,
+        content: updateData.commentToAdd.content,
         commentedAt: Date.now(),
-        userEmail: userInfo.email,
-        userId: userInfo._id
+        userEmail: commentAuthor.email,
+        userId: commentAuthor._id.toString(),
+        userAvatar: commentAuthor.avatar,
+        userDisplayName: commentAuthor.displayName
       }
 
       updatedCard = await cardModel.unShiftNewComment(cardId, commentData)
     } else if (updateData.incommingMemberInfo) {
+      const targetUserId = updateData.incommingMemberInfo.userId
+      const boardUserIds = getBoardUserIds(authorizedBoard)
+
+      if (
+        updateData.incommingMemberInfo.action === CARD_MEMBER_ACTIONS.ADD &&
+        !boardUserIds.includes(targetUserId)
+      ) {
+        throw new ApiError(
+          StatusCodes.UNPROCESSABLE_ENTITY,
+          'Only board members can be assigned to a card.'
+        )
+      }
+
       updatedCard = await cardModel.updateMembers(
         cardId,
         updateData.incommingMemberInfo
