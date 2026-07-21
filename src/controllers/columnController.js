@@ -4,7 +4,10 @@ import { columnService } from '~/services/columnService'
 
 const createNew = async (req, res, next) => {
   try {
-    const createColumn = await columnService.createNew(req.body)
+    const createColumn = await columnService.createNew(
+      req.body,
+      req.jwtDecoded._id
+    )
 
     res.status(StatusCodes.CREATED).json(createColumn)
   } catch (error) {
@@ -16,7 +19,11 @@ const update = async (req, res, next) => {
   try {
     const columnId = req.params.id
 
-    const updatedColumn = await columnService.update(columnId, req.body)
+    const updatedColumn = await columnService.update(
+      columnId,
+      req.body,
+      req.jwtDecoded._id
+    )
 
     res.status(StatusCodes.OK).json(updatedColumn)
   } catch (error) {
@@ -27,7 +34,10 @@ const deleteItem = async (req, res, next) => {
   try {
     const columnId = req.params.id
 
-    const result = await columnService.deleteItem(columnId)
+    const result = await columnService.deleteItem(
+      columnId,
+      req.jwtDecoded._id
+    )
 
     res.status(StatusCodes.OK).json(result)
   } catch (error) {

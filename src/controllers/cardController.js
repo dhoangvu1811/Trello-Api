@@ -7,7 +7,10 @@ const createNew = async (req, res, next) => {
     // console.log('req.body', req.body)
     // throw new ApiError(StatusCodes.BAD_GATEWAY, 'test')
 
-    const createCard = await cardService.createNew(req.body)
+    const createCard = await cardService.createNew(
+      req.body,
+      req.jwtDecoded._id
+    )
 
     res.status(StatusCodes.CREATED).json(createCard)
   } catch (error) {
