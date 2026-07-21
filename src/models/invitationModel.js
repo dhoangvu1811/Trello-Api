@@ -1,6 +1,6 @@
 import Joi from 'joi'
 import { ObjectId } from 'mongodb'
-import { GET_DB } from '~/config/mongodb'
+import { GET_DB, SESSION_OPTIONS } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 
 import { BOARD_INVITATION_STATUS, INVITATION_TYPES } from '~/utils/constants'
@@ -52,7 +52,7 @@ const validateBeforeCreate = async (data) => {
   })
 }
 
-const createNewBoardInvitation = async (data) => {
+const createNewBoardInvitation = async (data, session) => {
   try {
     const validData = await validateBeforeCreate(data)
     // Biến đổi một dữ liệu liên quan đến ObjectId
@@ -73,7 +73,7 @@ const createNewBoardInvitation = async (data) => {
     // Gọi insert vào DB
     const createInvitation = await GET_DB()
       .collection(INVITATION_COLLECTION_NAME)
-      .insertOne(newInvitationToAdd)
+      .insertOne(newInvitationToAdd, SESSION_OPTIONS(session))
 
     return createInvitation
   } catch (error) {
@@ -81,13 +81,14 @@ const createNewBoardInvitation = async (data) => {
   }
 }
 
-const findOneById = async (invitationId) => {
+const findOneById = async (invitationId, session) => {
   try {
     const result = await GET_DB()
       .collection(INVITATION_COLLECTION_NAME)
-      .findOne({
-        _id: new ObjectId(invitationId)
-      })
+      .findOne(
+        { _id: new ObjectId(invitationId) },
+        SESSION_OPTIONS(session)
+      )
 
     return result
   } catch (error) {
@@ -95,7 +96,7 @@ const findOneById = async (invitationId) => {
   }
 }
 
-const update = async (invitationId, updateData) => {
+const update = async (invitationId, updateData, session) => {
   try {
     // Lọc những field không cho cập nhật
     Object.keys(updateData).forEach((fieldName) => {
@@ -119,9 +120,7 @@ const update = async (invitationId, updateData) => {
         {
           $set: updateData
         },
-        {
-          returnDocument: 'after'
-        }
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result

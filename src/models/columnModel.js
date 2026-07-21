@@ -1,6 +1,6 @@
 import Joi from 'joi'
 import { ObjectId } from 'mongodb'
-import { GET_DB } from '~/config/mongodb'
+import { GET_DB, SESSION_OPTIONS } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 
 // Define Collection (name & schema)
@@ -31,7 +31,7 @@ const validateBeforeCreate = async (data) => {
   })
 }
 
-const createNew = async (data) => {
+const createNew = async (data, session) => {
   try {
     const validDate = await validateBeforeCreate(data)
     const newColumnToAdd = {
@@ -41,7 +41,7 @@ const createNew = async (data) => {
 
     const createdColumn = await GET_DB()
       .collection(COLUMN_COLLECTION_NAME)
-      .insertOne(newColumnToAdd)
+      .insertOne(newColumnToAdd, SESSION_OPTIONS(session))
 
     return createdColumn
   } catch (error) {
@@ -49,39 +49,13 @@ const createNew = async (data) => {
   }
 }
 
-const findOneById = async (columnId) => {
+const findOneById = async (columnId, session) => {
   try {
     const result = await GET_DB()
       .collection(COLUMN_COLLECTION_NAME)
-      .findOne({
-        _id: new ObjectId(columnId)
-      })
-
-    return result
-  } catch (error) {
-    throw new Error(error)
-  }
-}
-
-const findByBoardId = async (boardId) => {
-  try {
-    return await GET_DB()
-      .collection(COLUMN_COLLECTION_NAME)
-      .find({ boardId: new ObjectId(boardId), _destroy: false })
-      .toArray()
-  } catch (error) {
-    throw new Error(error)
-  }
-}
-
-const pushCardOrderIds = async (card) => {
-  try {
-    const result = await GET_DB()
-      .collection(COLUMN_COLLECTION_NAME)
-      .findOneAndUpdate(
-        { _id: new ObjectId(card.columnId) },
-        { $push: { cardOrderIds: new ObjectId(card._id) } },
-        { returnDocument: 'after' }
+      .findOne(
+        { _id: new ObjectId(columnId) },
+        SESSION_OPTIONS(session)
       )
 
     return result
@@ -90,7 +64,37 @@ const pushCardOrderIds = async (card) => {
   }
 }
 
-const update = async (columnId, updateData) => {
+const findByBoardId = async (boardId, session) => {
+  try {
+    return await GET_DB()
+      .collection(COLUMN_COLLECTION_NAME)
+      .find(
+        { boardId: new ObjectId(boardId), _destroy: false },
+        SESSION_OPTIONS(session)
+      )
+      .toArray()
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
+const pushCardOrderIds = async (card, session) => {
+  try {
+    const result = await GET_DB()
+      .collection(COLUMN_COLLECTION_NAME)
+      .findOneAndUpdate(
+        { _id: new ObjectId(card.columnId) },
+        { $push: { cardOrderIds: new ObjectId(card._id) } },
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
+      )
+
+    return result
+  } catch (error) {
+    throw new Error(error)
+  }
+}
+
+const update = async (columnId, updateData, session) => {
   try {
     // Lọc những trường không cho phép cập nhật
     Object.keys(updateData).forEach((fieldName) => {
@@ -104,7 +108,7 @@ const update = async (columnId, updateData) => {
       .findOneAndUpdate(
         { _id: new ObjectId(columnId) },
         { $set: updateData },
-        { returnDocument: 'after' } // Trả về kết quả mới sau khi cập nhật
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result
@@ -113,13 +117,14 @@ const update = async (columnId, updateData) => {
   }
 }
 
-const deleteOnebyId = async (columnId) => {
+const deleteOnebyId = async (columnId, session) => {
   try {
     const result = await GET_DB()
       .collection(COLUMN_COLLECTION_NAME)
-      .deleteOne({
-        _id: new ObjectId(columnId)
-      })
+      .deleteOne(
+        { _id: new ObjectId(columnId) },
+        SESSION_OPTIONS(session)
+      )
 
     return result
   } catch (error) {

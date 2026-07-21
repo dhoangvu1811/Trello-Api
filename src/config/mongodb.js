@@ -30,6 +30,25 @@ export const GET_DB = () => {
   return trelloDatabaseInstance
 }
 
+export const WITH_TRANSACTION = async (operation) => {
+  if (!mongoClientInstance)
+    throw new Error('Must connect to Database first!')
+
+  const session = mongoClientInstance.startSession()
+  try {
+    let result
+    await session.withTransaction(async () => {
+      result = await operation(session)
+    })
+    return result
+  } finally {
+    await session.endSession()
+  }
+}
+
+export const SESSION_OPTIONS = (session, options = {}) =>
+  session ? { ...options, session } : options
+
 //Đóng kết nối tơí DB
 export const CLOSE_DB = async () => {
   if (!mongoClientInstance) return
