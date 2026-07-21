@@ -10,6 +10,11 @@ const createNewBoardInvitation = async (req, res, next) => {
       inviterId
     )
 
+    req.app
+      .get('io')
+      .to(`user:${resInvitation.inviteeId.toString()}`)
+      .emit('BE_USER_INVITED_TO_BOARD', resInvitation)
+
     res.status(StatusCodes.CREATED).json(resInvitation)
   } catch (error) {
     next(error)

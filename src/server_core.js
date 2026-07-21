@@ -10,7 +10,10 @@ import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware'
 import cookieParser from 'cookie-parser'
 import socketIo from 'socket.io'
 import http from 'http'
-import { inviteUserToBoardSocket } from './sockets/inviteUserToBoardSocket'
+import {
+  authenticateSocket,
+  registerBoardSocket
+} from './sockets/inviteUserToBoardSocket'
 
 const START_EXPRESS = () => {
   const app = express()
@@ -40,8 +43,10 @@ const START_EXPRESS = () => {
   const server = http.createServer(app)
   // Khởi tạo biến io với server và cors
   const io = socketIo(server, { cors: corsOptions })
+  app.set('io', io)
+  io.use(authenticateSocket)
   io.on('connection', (socket) => {
-    inviteUserToBoardSocket(socket)
+    registerBoardSocket(socket)
   })
 
   const port = Number(env.PORT)
