@@ -15,7 +15,7 @@ import {
 } from './sockets/inviteUserToBoardSocket'
 import { logger } from '~/utils/logger'
 
-const START_EXPRESS = () => {
+export const CREATE_HTTP_SERVER = () => {
   const app = express()
 
   if (env.BUILD_MODE === 'production') app.set('trust proxy', 1)
@@ -51,6 +51,12 @@ const START_EXPRESS = () => {
     registerBoardSocket(socket)
   })
 
+  return { app, server, io }
+}
+
+const START_EXPRESS = () => {
+  const { server, io } = CREATE_HTTP_SERVER()
+
   const port = Number(env.PORT)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535.')
@@ -84,6 +90,8 @@ const START_EXPRESS = () => {
       }
     })
   })
+
+  return { server, io }
 }
 
 export const START_SERVER = () => {

@@ -27,20 +27,33 @@ export const authenticateSocket = async (socket, next) => {
 }
 
 export const registerBoardSocket = (socket) => {
-  socket.on('FE_JOIN_BOARD', async (boardId) => {
+  socket.on('FE_JOIN_BOARD', async (boardId, acknowledge = () => {}) => {
+    const respond =
+      typeof acknowledge === 'function' ? acknowledge : () => {}
     try {
-      if (!ObjectId.isValid(boardId)) return
+      if (!ObjectId.isValid(boardId)) {
+        respond({ joined: false })
+        return
+      }
 
       const board = await boardModel.findOneById(boardId)
-      if (!board || board._destroy) return
+      if (!board || board._destroy) {
+        respond({ joined: false })
+        return
+      }
 
       if (canAccessBoard(board, socket.data.user._id)) {
         socket.join(`board:${boardId}`)
+        respond({ joined: true })
+        return
       }
+
+      respond({ joined: false })
     } catch (_error) {
       socket.emit('BE_SOCKET_ERROR', {
         message: 'Unable to join the requested board.'
       })
+      respond({ joined: false })
     }
   })
 
