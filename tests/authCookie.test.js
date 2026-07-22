@@ -21,11 +21,11 @@ test('uses HTTP-compatible auth cookies during local development', () => {
   })
 })
 
-test('requires HTTPS auth cookies in production', () => {
+test('uses secure cross-site auth cookies in production', () => {
   assert.deepEqual(createAuthCookieOptions('production'), {
     httpOnly: true,
     secure: true,
-    sameSite: 'lax',
+    sameSite: 'none',
     path: '/'
   })
 })
