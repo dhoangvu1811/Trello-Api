@@ -11,11 +11,11 @@ cloudinaryV2.config({
 })
 
 //Khởi tạo một function để thực hiện upload file lên Cloudinary
-const streamUpload = (fileBuffer, folderName) => {
+const streamUpload = (fileBuffer, folderName, options = {}) => {
   return new Promise((resolve, reject) => {
     // Tạo một luồng stream upload lên Cloudinary
     const stream = cloudinaryV2.uploader.upload_stream(
-      { folder: folderName },
+      { folder: folderName, ...options },
       (err, result) => {
         if (err) reject(err)
         else resolve(result)
@@ -26,6 +26,10 @@ const streamUpload = (fileBuffer, folderName) => {
   })
 }
 
+const destroy = async (publicId, resourceType = 'image') =>
+  await cloudinaryV2.uploader.destroy(publicId, { resource_type: resourceType })
+
 export const CloudinaryProvider = {
-  streamUpload
+  streamUpload,
+  destroy
 }

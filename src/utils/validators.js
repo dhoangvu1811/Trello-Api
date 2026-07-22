@@ -11,3 +11,10 @@ export const PASSWORD_RULE_MESSAGE =
 // Liên quan đến Validate File
 export const LIMIT_COMMON_FILE_SIZE = 10485760 // byte = 10 MB
 export const ALLOW_COMMON_FILE_TYPES = ['image/jpg', 'image/jpeg', 'image/png']
+export const ALLOW_ATTACHMENT_FILE_TYPES = [
+  ...ALLOW_COMMON_FILE_TYPES,
+  'application/pdf',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]

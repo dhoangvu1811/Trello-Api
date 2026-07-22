@@ -69,8 +69,8 @@ const getDetails = async (userId, boardId) => {
     //Đưa card về đúng column (dữ liệu chưa đúng vì card nằm cùng cấp với column)
     //method equals được mongoDb support
     resBoard.columns.forEach((column) => {
-      column.cards = resBoard.cards.filter((card) =>
-        card.columnId.equals(column._id)
+      column.cards = resBoard.cards.filter(
+        (card) => !card.archivedAt && card.columnId.equals(column._id)
       )
     })
 

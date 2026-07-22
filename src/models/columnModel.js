@@ -94,6 +94,26 @@ const pushCardOrderIds = async (card, session) => {
   }
 }
 
+const addCardOrderId = async (columnId, cardId, session) => {
+  return await GET_DB()
+    .collection(COLUMN_COLLECTION_NAME)
+    .findOneAndUpdate(
+      { _id: new ObjectId(columnId) },
+      { $addToSet: { cardOrderIds: new ObjectId(cardId) } },
+      SESSION_OPTIONS(session, { returnDocument: 'after' })
+    )
+}
+
+const removeCardOrderId = async (columnId, cardId, session) => {
+  return await GET_DB()
+    .collection(COLUMN_COLLECTION_NAME)
+    .findOneAndUpdate(
+      { _id: new ObjectId(columnId) },
+      { $pull: { cardOrderIds: new ObjectId(cardId) } },
+      SESSION_OPTIONS(session, { returnDocument: 'after' })
+    )
+}
+
 const update = async (columnId, updateData, session) => {
   try {
     // Lọc những trường không cho phép cập nhật
@@ -139,6 +159,8 @@ export const columnModel = {
   findOneById,
   findByBoardId,
   pushCardOrderIds,
+  addCardOrderId,
+  removeCardOrderId,
   update,
   deleteOnebyId
 }

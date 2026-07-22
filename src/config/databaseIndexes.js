@@ -17,7 +17,11 @@ export const ENSURE_DATABASE_INDEXES = async (database) => {
     ]),
     database.collection('cards').createIndexes([
       { key: { boardId: 1, columnId: 1 }, name: 'cards_board_column' },
-      { key: { memberIds: 1, dueDate: 1 }, name: 'cards_member_due_date' }
+      { key: { memberIds: 1, dueDate: 1 }, name: 'cards_member_due_date' },
+      {
+        key: { boardId: 1, archivedAt: -1 },
+        name: 'cards_board_archived_at'
+      }
     ]),
     database.collection('columns').createIndex(
       { boardId: 1, _destroy: 1 },
