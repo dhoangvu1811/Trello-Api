@@ -28,6 +28,8 @@ process.env.ACCESS_TOKEN_LIFE = '1h'
 process.env.REFRESH_TOKEN_SECRET_SIGNATURE = 'phase0-refresh-secret'
 process.env.REFRESH_TOKEN_LIFE = '14 days'
 
+const { AUTH_COOKIE_NAMES } = require('../build/src/config/authCookie')
+
 const collections = [
   'activities',
   'authSessions',
@@ -51,7 +53,7 @@ const request = async (path, { token, cookies, method = 'GET', body } = {}) => {
     method,
     headers: {
       ...(cookies || token
-        ? { Cookie: cookies || `accessToken=${token}` }
+        ? { Cookie: cookies || `${AUTH_COOKIE_NAMES.access}=${token}` }
         : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {})
     },
@@ -186,11 +188,16 @@ test.before(async () => {
 test.after(async () => {
   if (skipReason) return
   if (!databaseName.startsWith('trello_phase0_test_')) {
-    throw new Error('Refusing to drop a database outside the Phase Zero test namespace.')
+    throw new Error('Refusing to clean a database outside the Phase Zero test namespace.')
   }
-  await database.dropDatabase()
-  await new Promise((resolve) => io.close(resolve))
-  await api.CLOSE_DB()
+  try {
+    await Promise.all(
+      collections.map((name) => database.collection(name).deleteMany({}))
+    )
+  } finally {
+    await new Promise((resolve) => io.close(resolve))
+    await api.CLOSE_DB()
+  }
 })
 
 test('enforces the complete board role hierarchy over HTTP', { skip: skipReason }, async () => {
@@ -349,7 +356,9 @@ test('authenticates sockets and isolates user and board rooms', {
       transports: ['websocket'],
       forceNew: true,
       autoConnect: false,
-      extraHeaders: token ? { Cookie: `accessToken=${token}` } : {}
+      extraHeaders: token
+        ? { Cookie: `${AUTH_COOKIE_NAMES.access}=${token}` }
+        : {}
     })
   const memberSocket = connect(fixture.users.member.token)
   const viewerSocket = connect(fixture.users.viewer.token)
@@ -437,10 +446,10 @@ test('rotates and revokes browser sessions', { skip: skipReason }, async () => {
 
   const setCookies = login.headers.getSetCookie()
   const accessCookie = setCookies.find((cookie) =>
-    cookie.startsWith('accessToken=')
+    cookie.startsWith(`${AUTH_COOKIE_NAMES.access}=`)
   )
   const refreshCookie = setCookies.find((cookie) =>
-    cookie.startsWith('refreshToken=')
+    cookie.startsWith(`${AUTH_COOKIE_NAMES.refresh}=`)
   )
   for (const cookie of [accessCookie, refreshCookie]) {
     assert.match(cookie, /HttpOnly/i)
@@ -448,8 +457,8 @@ test('rotates and revokes browser sessions', { skip: skipReason }, async () => {
     assert.match(cookie, /SameSite=Lax/i)
     assert.match(cookie, /Path=\//i)
   }
-  const accessToken = accessCookie.match(/^accessToken=([^;]+)/)[1]
-  const firstRefreshToken = refreshCookie.match(/^refreshToken=([^;]+)/)[1]
+  const accessToken = accessCookie.split('=', 2)[1].split(';', 1)[0]
+  const firstRefreshToken = refreshCookie.split('=', 2)[1].split(';', 1)[0]
 
   const activeSession = await request('/users/session', { token: accessToken })
   assert.equal(activeSession.status, 200)
@@ -457,42 +466,49 @@ test('rotates and revokes browser sessions', { skip: skipReason }, async () => {
 
   const firstRefresh = await request('/users/refresh_token', {
     method: 'POST',
-    cookies: `refreshToken=${firstRefreshToken}`
+    cookies: `${AUTH_COOKIE_NAMES.refresh}=${firstRefreshToken}`
   })
   assert.equal(firstRefresh.status, 200)
   assert.equal('accessToken' in firstRefresh.body, false)
   assert.equal('refreshToken' in firstRefresh.body, false)
   const firstRotatedToken = firstRefresh.headers
     .getSetCookie()
-    .find((cookie) => cookie.startsWith('refreshToken='))
-    .match(/^refreshToken=([^;]+)/)[1]
+    .find((cookie) =>
+      cookie.startsWith(`${AUTH_COOKIE_NAMES.refresh}=`)
+    )
+    .split('=', 2)[1]
+    .split(';', 1)[0]
   assert.notEqual(firstRotatedToken, firstRefreshToken)
 
   const concurrentRefresh = await request('/users/refresh_token', {
     method: 'POST',
-    cookies: `refreshToken=${firstRefreshToken}`
+    cookies: `${AUTH_COOKIE_NAMES.refresh}=${firstRefreshToken}`
   })
   assert.equal(concurrentRefresh.status, 200)
   const latestRefreshToken = concurrentRefresh.headers
     .getSetCookie()
-    .find((cookie) => cookie.startsWith('refreshToken='))
-    .match(/^refreshToken=([^;]+)/)[1]
+    .find((cookie) =>
+      cookie.startsWith(`${AUTH_COOKIE_NAMES.refresh}=`)
+    )
+    .split('=', 2)[1]
+    .split(';', 1)[0]
 
   const replay = await request('/users/refresh_token', {
     method: 'POST',
-    cookies: `refreshToken=${firstRefreshToken}`
+    cookies: `${AUTH_COOKIE_NAMES.refresh}=${firstRefreshToken}`
   })
   assert.equal(replay.status, 401)
 
   const logout = await request('/users/logout', {
     method: 'DELETE',
-    cookies: `refreshToken=${latestRefreshToken}`
+    cookies: `${AUTH_COOKIE_NAMES.refresh}=${latestRefreshToken}`
   })
   assert.equal(logout.status, 200)
   const revokedAccessToken = concurrentRefresh.headers
     .getSetCookie()
-    .find((cookie) => cookie.startsWith('accessToken='))
-    .match(/^accessToken=([^;]+)/)[1]
+    .find((cookie) => cookie.startsWith(`${AUTH_COOKIE_NAMES.access}=`))
+    .split('=', 2)[1]
+    .split(';', 1)[0]
   const revokedSession = await request('/users/session', {
     token: revokedAccessToken
   })

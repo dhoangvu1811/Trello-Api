@@ -5,11 +5,12 @@ import { boardModel } from '~/models/boardModel'
 import { JwtProvider } from '~/providers/JwtProvider'
 import { canAccessBoard } from '~/utils/boardPermissions'
 import { userService } from '~/services/userService'
+import { AUTH_COOKIE_NAMES } from '~/config/authCookie'
 
 export const authenticateSocket = async (socket, next) => {
   try {
     const cookies = parse(socket.request.headers.cookie || '')
-    const accessToken = cookies.accessToken
+    const accessToken = cookies[AUTH_COOKIE_NAMES.access]
     if (!accessToken) {
       next(new Error('Unauthorized socket connection.'))
       return

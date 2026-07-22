@@ -3,11 +3,12 @@ import { JwtProvider } from '~/providers/JwtProvider'
 import { env } from '~/config/environment'
 import ApiError from '~/utils/ApiError'
 import { userService } from '~/services/userService'
+import { AUTH_COOKIE_NAMES } from '~/config/authCookie'
 
 //Middleware này sẽ đảm nhiệm việc quan trọng: Xác thực cái Jwt accessToken nhận được từ FE có hợp lệ hay không
 const isAuthorized = async (req, res, next) => {
   // Lấy accessToken nằm trong request cookies phía client - withCredentials trong file authorizeAxios
-  const clientAccessToken = req.cookies?.accessToken
+  const clientAccessToken = req.cookies?.[AUTH_COOKIE_NAMES.access]
 
   // Nếu như clientAccessToken không tồn tại thì trả về lỗi
   if (!clientAccessToken) {
