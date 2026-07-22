@@ -3,21 +3,15 @@ import ms from 'ms'
 import { userService } from '~/services/userService'
 import ApiError from '~/utils/ApiError'
 import { env } from '~/config/environment'
-
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'lax',
-  path: '/'
-}
+import { AUTH_COOKIE_OPTIONS } from '~/config/authCookie'
 
 const setAuthCookies = (res, result) => {
   res.cookie('accessToken', result.accessToken, {
-    ...COOKIE_OPTIONS,
+    ...AUTH_COOKIE_OPTIONS,
     maxAge: ms(env.ACCESS_TOKEN_LIFE)
   })
   res.cookie('refreshToken', result.refreshToken, {
-    ...COOKIE_OPTIONS,
+    ...AUTH_COOKIE_OPTIONS,
     maxAge: Math.max(0, result.sessionExpiresAt - Date.now())
   })
 }
@@ -61,8 +55,8 @@ const login = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     const clientRefreshToken = req.cookies?.refreshToken
-    res.clearCookie('accessToken', COOKIE_OPTIONS)
-    res.clearCookie('refreshToken', COOKIE_OPTIONS)
+    res.clearCookie('accessToken', AUTH_COOKIE_OPTIONS)
+    res.clearCookie('refreshToken', AUTH_COOKIE_OPTIONS)
     const sessionId = await userService.logout(clientRefreshToken)
     if (sessionId) {
       req.app.get('io').in(`session:${sessionId}`).disconnectSockets(true)

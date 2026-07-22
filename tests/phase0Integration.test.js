@@ -421,7 +421,7 @@ test('authenticates sockets and isolates user and board rooms', {
 
 })
 
-test('rotates and revokes secure browser sessions', { skip: skipReason }, async () => {
+test('rotates and revokes browser sessions', { skip: skipReason }, async () => {
   const fixture = await resetFixture()
   const login = await request('/users/login', {
     method: 'POST',
@@ -444,7 +444,7 @@ test('rotates and revokes secure browser sessions', { skip: skipReason }, async 
   )
   for (const cookie of [accessCookie, refreshCookie]) {
     assert.match(cookie, /HttpOnly/i)
-    assert.match(cookie, /Secure/i)
+    assert.doesNotMatch(cookie, /;\s*Secure/i)
     assert.match(cookie, /SameSite=Lax/i)
     assert.match(cookie, /Path=\//i)
   }

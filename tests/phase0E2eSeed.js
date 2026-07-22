@@ -19,27 +19,31 @@ const ids = {
   card: new ObjectId('700000000000000000000030')
 }
 
+const collectionNames = [
+  'activities',
+  'authSessions',
+  'boards',
+  'cards',
+  'columns',
+  'invitations',
+  'rateLimits',
+  'users'
+]
+
 const run = async () => {
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 })
   await client.connect()
   const database = client.db(databaseName)
   try {
     if (process.argv.includes('--cleanup')) {
-      await database.dropDatabase()
+      await Promise.all(
+        collectionNames.map((name) => database.collection(name).deleteMany({}))
+      )
       return
     }
 
     await Promise.all(
-      [
-        'activities',
-        'authSessions',
-        'boards',
-        'cards',
-        'columns',
-        'invitations',
-        'rateLimits',
-        'users'
-      ].map((name) => database.collection(name).deleteMany({}))
+      collectionNames.map((name) => database.collection(name).deleteMany({}))
     )
     const password = bcrypt.hashSync('Phase0Test1!', 8)
     const now = Date.now()
