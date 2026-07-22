@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes'
 import { JwtProvider } from '~/providers/JwtProvider'
 import { env } from '~/config/environment'
 import ApiError from '~/utils/ApiError'
+import { userService } from '~/services/userService'
 
 //Middleware này sẽ đảm nhiệm việc quan trọng: Xác thực cái Jwt accessToken nhận được từ FE có hợp lệ hay không
 const isAuthorized = async (req, res, next) => {
@@ -22,10 +23,18 @@ const isAuthorized = async (req, res, next) => {
       clientAccessToken,
       env.ACCESS_TOKEN_SECRET_SIGNATURE
     )
-    // console.log('🚀 ~ isAuthorized ~ accessTokenDecoded:', accessTokenDecoded)
+    const authContext = await userService.validateAccessSession(
+      accessTokenDecoded
+    )
+    if (!authContext) {
+      next(new ApiError(StatusCodes.UNAUTHORIZED, 'Session is no longer valid.'))
+      return
+    }
 
     //B2: Nếu như token hợp lệ thì cần lưu thông tin giải mã vào req.jwtDecoded, để sử dụng cho các tầng xử lý ở phía sau
     req.jwtDecoded = accessTokenDecoded
+    req.authenticatedUser = authContext.user
+    req.authSession = authContext.session
 
     //B3: cho phép req đi tiếp
     next()

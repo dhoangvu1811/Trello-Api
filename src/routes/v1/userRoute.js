@@ -37,7 +37,14 @@ Router.route('/reset-password').put(
 )
 
 Router.route('/logout').delete(userController.logout)
-Router.route('/refresh_token').get(userController.refreshToken)
+Router.route('/refresh_token').post(
+  rateLimitMiddleware.refresh,
+  userController.refreshToken
+)
+Router.route('/session').get(
+  authMiddleware.isAuthorized,
+  userController.getSession
+)
 
 Router.route('/update').put(
   authMiddleware.isAuthorized,

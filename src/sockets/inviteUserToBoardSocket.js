@@ -4,6 +4,7 @@ import { env } from '~/config/environment'
 import { boardModel } from '~/models/boardModel'
 import { JwtProvider } from '~/providers/JwtProvider'
 import { canAccessBoard } from '~/utils/boardPermissions'
+import { userService } from '~/services/userService'
 
 export const authenticateSocket = async (socket, next) => {
   try {
@@ -18,8 +19,21 @@ export const authenticateSocket = async (socket, next) => {
       accessToken,
       env.ACCESS_TOKEN_SECRET_SIGNATURE
     )
+    const authContext = await userService.validateAccessSession(user)
+    if (!authContext) {
+      next(new Error('Unauthorized socket connection.'))
+      return
+    }
     socket.data.user = user
+    socket.data.sessionExpiresAt = authContext.session.expiresAt.getTime()
     socket.join(`user:${user._id}`)
+    socket.join(`session:${user.sessionId}`)
+    const expiryTimer = setTimeout(
+      () => socket.disconnect(true),
+      Math.max(0, socket.data.sessionExpiresAt - Date.now())
+    )
+    expiryTimer.unref?.()
+    socket.once('disconnect', () => clearTimeout(expiryTimer))
     next()
   } catch (_error) {
     next(new Error('Unauthorized socket connection.'))

@@ -32,6 +32,7 @@ const run = async () => {
     await Promise.all(
       [
         'activities',
+        'authSessions',
         'boards',
         'cards',
         'columns',

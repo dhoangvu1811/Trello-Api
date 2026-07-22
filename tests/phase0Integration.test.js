@@ -30,6 +30,7 @@ process.env.REFRESH_TOKEN_LIFE = '14 days'
 
 const collections = [
   'activities',
+  'authSessions',
   'boards',
   'cards',
   'columns',
@@ -45,11 +46,13 @@ let io
 let baseUrl
 let modules
 
-const request = async (path, { token, method = 'GET', body } = {}) => {
+const request = async (path, { token, cookies, method = 'GET', body } = {}) => {
   const response = await fetch(`${baseUrl}/V1${path}`, {
     method,
     headers: {
-      ...(token ? { Cookie: `accessToken=${token}` } : {}),
+      ...(cookies || token
+        ? { Cookie: cookies || `accessToken=${token}` }
+        : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {})
     },
     body: body ? JSON.stringify(body) : undefined
@@ -62,12 +65,24 @@ const request = async (path, { token, method = 'GET', body } = {}) => {
   }
 }
 
-const createToken = async (user) =>
-  modules.JwtProvider.generateToken(
-    { _id: user._id.toString(), email: user.email },
+const createToken = async (user) => {
+  const sessionId = crypto.randomUUID()
+  await database.collection('authSessions').insertOne({
+    _id: sessionId,
+    userId: user._id,
+    refreshTokenHash: crypto.randomBytes(32).toString('hex'),
+    previousRefreshTokenHash: null,
+    expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    createdAt: Date.now(),
+    updatedAt: null
+  })
+  return modules.JwtProvider.generateToken(
+    { _id: user._id.toString(), email: user.email, sessionId },
     process.env.ACCESS_TOKEN_SECRET_SIGNATURE,
     process.env.ACCESS_TOKEN_LIFE
   )
+}
 
 const resetFixture = async () => {
   await Promise.all(collections.map((name) => database.collection(name).deleteMany({})))
@@ -324,23 +339,34 @@ test('keeps cross-column moves atomic and records precise activity', { skip: ski
   })
 })
 
-test('authenticates sockets and isolates user and board rooms', { skip: skipReason }, async () => {
+test('authenticates sockets and isolates user and board rooms', {
+  skip: skipReason,
+  timeout: 15_000
+}, async (t) => {
   const fixture = await resetFixture()
   const connect = (token) =>
     createSocketClient(baseUrl, {
       transports: ['websocket'],
       forceNew: true,
+      autoConnect: false,
       extraHeaders: token ? { Cookie: `accessToken=${token}` } : {}
     })
   const memberSocket = connect(fixture.users.member.token)
   const viewerSocket = connect(fixture.users.viewer.token)
   const outsiderSocket = connect(fixture.users.outsider.token)
   const unauthenticatedSocket = connect()
+  t.after(() => {
+    memberSocket.disconnect()
+    viewerSocket.disconnect()
+    outsiderSocket.disconnect()
+    unauthenticatedSocket.disconnect()
+  })
 
   const waitForConnect = (socket) =>
     new Promise((resolve, reject) => {
       socket.once('connect', resolve)
       socket.once('connect_error', reject)
+      socket.connect()
     })
   await Promise.all([
     waitForConnect(memberSocket),
@@ -349,6 +375,7 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
   ])
   const rejected = await new Promise((resolve) => {
     unauthenticatedSocket.once('connect_error', (error) => resolve(error.message))
+    unauthenticatedSocket.connect()
   })
   assert.equal(rejected, 'Unauthorized socket connection.')
 
@@ -392,10 +419,84 @@ test('authenticates sockets and isolates user and board rooms', { skip: skipReas
   assert.equal(delivered.inviteeId, fixture.ids.outsider.toString())
   assert.equal(delivered.boardInvitation.role, 'VIEWER')
 
-  memberSocket.disconnect()
-  viewerSocket.disconnect()
-  outsiderSocket.disconnect()
-  unauthenticatedSocket.disconnect()
+})
+
+test('rotates and revokes secure browser sessions', { skip: skipReason }, async () => {
+  const fixture = await resetFixture()
+  const login = await request('/users/login', {
+    method: 'POST',
+    body: {
+      email: fixture.users.owner.email,
+      password: fixture.password
+    }
+  })
+  assert.equal(login.status, 200)
+  assert.equal('accessToken' in login.body, false)
+  assert.equal('refreshToken' in login.body, false)
+  assert.equal(login.body.user.email, fixture.users.owner.email)
+
+  const setCookies = login.headers.getSetCookie()
+  const accessCookie = setCookies.find((cookie) =>
+    cookie.startsWith('accessToken=')
+  )
+  const refreshCookie = setCookies.find((cookie) =>
+    cookie.startsWith('refreshToken=')
+  )
+  for (const cookie of [accessCookie, refreshCookie]) {
+    assert.match(cookie, /HttpOnly/i)
+    assert.match(cookie, /Secure/i)
+    assert.match(cookie, /SameSite=Lax/i)
+    assert.match(cookie, /Path=\//i)
+  }
+  const accessToken = accessCookie.match(/^accessToken=([^;]+)/)[1]
+  const firstRefreshToken = refreshCookie.match(/^refreshToken=([^;]+)/)[1]
+
+  const activeSession = await request('/users/session', { token: accessToken })
+  assert.equal(activeSession.status, 200)
+  assert.equal(activeSession.body.user.email, fixture.users.owner.email)
+
+  const firstRefresh = await request('/users/refresh_token', {
+    method: 'POST',
+    cookies: `refreshToken=${firstRefreshToken}`
+  })
+  assert.equal(firstRefresh.status, 200)
+  assert.equal('accessToken' in firstRefresh.body, false)
+  assert.equal('refreshToken' in firstRefresh.body, false)
+  const firstRotatedToken = firstRefresh.headers
+    .getSetCookie()
+    .find((cookie) => cookie.startsWith('refreshToken='))
+    .match(/^refreshToken=([^;]+)/)[1]
+  assert.notEqual(firstRotatedToken, firstRefreshToken)
+
+  const concurrentRefresh = await request('/users/refresh_token', {
+    method: 'POST',
+    cookies: `refreshToken=${firstRefreshToken}`
+  })
+  assert.equal(concurrentRefresh.status, 200)
+  const latestRefreshToken = concurrentRefresh.headers
+    .getSetCookie()
+    .find((cookie) => cookie.startsWith('refreshToken='))
+    .match(/^refreshToken=([^;]+)/)[1]
+
+  const replay = await request('/users/refresh_token', {
+    method: 'POST',
+    cookies: `refreshToken=${firstRefreshToken}`
+  })
+  assert.equal(replay.status, 401)
+
+  const logout = await request('/users/logout', {
+    method: 'DELETE',
+    cookies: `refreshToken=${latestRefreshToken}`
+  })
+  assert.equal(logout.status, 200)
+  const revokedAccessToken = concurrentRefresh.headers
+    .getSetCookie()
+    .find((cookie) => cookie.startsWith('accessToken='))
+    .match(/^accessToken=([^;]+)/)[1]
+  const revokedSession = await request('/users/session', {
+    token: revokedAccessToken
+  })
+  assert.equal(revokedSession.status, 401)
 })
 
 test('records every current mutation and creates the required indexes', { skip: skipReason }, async () => {
@@ -550,7 +651,8 @@ test('records every current mutation and creates the required indexes', { skip: 
       'invitations_invitee_created_at',
       'invitations_board_invitee_status'
     ],
-    rateLimits: ['rate_limits_expiry']
+    rateLimits: ['rate_limits_expiry'],
+    authSessions: ['auth_sessions_expiry', 'auth_sessions_user_active']
   }
   for (const [collectionName, expectedNames] of Object.entries(indexExpectations)) {
     const names = new Set(
@@ -595,6 +697,10 @@ test('validates pagination, password reset, and persistent rate limits', { skip:
     body: { token: resetToken, password: 'NewValidPassword1!' }
   })
   assert.equal(reset.status, 200)
+  const revokedAfterPasswordReset = await request('/boards', {
+    token: fixture.users.member.token
+  })
+  assert.equal(revokedAfterPasswordReset.status, 401)
   const reuse = await request('/users/reset-password', {
     method: 'PUT',
     body: { token: resetToken, password: 'AnotherPassword1!' }

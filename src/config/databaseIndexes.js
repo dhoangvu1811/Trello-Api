@@ -50,6 +50,14 @@ export const ENSURE_DATABASE_INDEXES = async (database) => {
     database.collection('rateLimits').createIndex(
       { expiresAt: 1 },
       { name: 'rate_limits_expiry', expireAfterSeconds: 0 }
-    )
+    ),
+    database.collection('authSessions').createIndexes([
+      {
+        key: { expiresAt: 1 },
+        name: 'auth_sessions_expiry',
+        expireAfterSeconds: 0
+      },
+      { key: { userId: 1, revokedAt: 1 }, name: 'auth_sessions_user_active' }
+    ])
   ])
 }

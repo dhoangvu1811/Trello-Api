@@ -57,6 +57,12 @@ export const rateLimitMiddleware = {
     windowMs: 15 * 60 * 1000,
     identify: identifyAuthRequest
   }),
+  refresh: createRateLimiter({
+    scope: 'refresh',
+    maxRequests: 60,
+    windowMs: 15 * 60 * 1000,
+    identify: (req) => req.ip
+  }),
   passwordReset: createRateLimiter({
     scope: 'password-reset',
     maxRequests: 5,
