@@ -122,9 +122,24 @@ const copy = async (req, res, next) => {
   }
 }
 
+const move = async (req, res, next) => {
+  try {
+    await Joi.object({
+      targetColumnId: Joi.string()
+        .required()
+        .pattern(OBJECT_ID_RULE)
+        .message(OBJECT_ID_RULE_MESSAGE)
+    }).validateAsync(req.body, { abortEarly: false })
+    next()
+  } catch (error) {
+    next(new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, new Error(error).message))
+  }
+}
+
 export const cardValidation = {
   createNew,
   update,
   setArchived,
-  copy
+  copy,
+  move
 }

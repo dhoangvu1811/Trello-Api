@@ -42,6 +42,13 @@ Router.route('/:id/copy').post(
   cardController.copy
 )
 
+Router.route('/:id/move').put(
+  authMiddleware.isAuthorized,
+  cardValidation.move,
+  boardAuthorizationMiddleware.requireBoardContentEditorByCard,
+  cardController.move
+)
+
 Router.route('/:id/attachments').post(
   authMiddleware.isAuthorized,
   multerUploadMiddleware.attachmentUpload.single('attachment'),

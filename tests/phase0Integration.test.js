@@ -37,6 +37,7 @@ const collections = [
   'cards',
   'columns',
   'invitations',
+  'notifications',
   'rateLimits',
   'users'
 ]
@@ -195,8 +196,8 @@ test.after(async () => {
       collections.map((name) => database.collection(name).deleteMany({}))
     )
   } finally {
-    await new Promise((resolve) => io.close(resolve))
-    await api.CLOSE_DB()
+    if (io) await new Promise((resolve) => io.close(resolve))
+    if (api) await api.CLOSE_DB()
   }
 })
 
@@ -274,6 +275,111 @@ test('enforces the complete board role hierarchy over HTTP', { skip: skipReason 
     { token: fixture.users.outsider.token }
   )
   assert.equal(outsiderActivities.status, 403)
+})
+
+test('supports the complete card lifecycle and notifications', { skip: skipReason }, async () => {
+  const fixture = await resetFixture()
+  const backlog = await createColumn(fixture, 'Backlog')
+  const done = await createColumn(fixture, 'Done')
+  const created = await request('/cards', {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: {
+      boardId: fixture.boardId,
+      columnId: backlog._id,
+      title: 'Phase One Card'
+    }
+  })
+  assert.equal(created.status, 201)
+  const cardId = created.body._id
+
+  const updated = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      priority: 'URGENT',
+      startDate: Date.now(),
+      dueDate: Date.now() + 60 * 60 * 1000,
+      labels: [{ name: 'Release', color: '#0C66E4' }],
+      checklist: [{ title: 'Verify release', isCompleted: true }],
+      watcherIds: [fixture.ids.admin.toString()]
+    }
+  })
+  assert.equal(updated.status, 200)
+  assert.equal(updated.body.priority, 'URGENT')
+  assert.equal(updated.body.checklist[0].isCompleted, true)
+  assert.equal(ObjectId.isValid(updated.body.labels[0]._id), true)
+
+  const assigned = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      incommingMemberInfo: {
+        userId: fixture.ids.admin.toString(),
+        action: 'ADD'
+      }
+    }
+  })
+  assert.equal(assigned.status, 200)
+
+  const comment = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { commentToAdd: { content: 'Please review @admin@phase0.test' } }
+  })
+  assert.equal(comment.status, 200)
+  assert.equal(ObjectId.isValid(comment.body.comments[0]._id), true)
+
+  const moved = await request(`/cards/${cardId}/move`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { targetColumnId: done._id }
+  })
+  assert.equal(moved.status, 200)
+  assert.equal(moved.body.columnId, done._id)
+
+  const copied = await request(`/cards/${cardId}/copy`, {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: { targetColumnId: backlog._id }
+  })
+  assert.equal(copied.status, 201)
+  assert.equal(copied.body.columnId, backlog._id)
+
+  const archived = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: true }
+  })
+  assert.equal(archived.status, 200)
+  assert.equal(typeof archived.body.archivedAt, 'number')
+
+  const archive = await request(`/cards/archived/board/${fixture.boardId}`, {
+    token: fixture.users.member.token
+  })
+  assert.equal(archive.status, 200)
+  assert.equal(archive.body.some((card) => card._id === cardId), true)
+
+  const restored = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: false }
+  })
+  assert.equal(restored.status, 200)
+  assert.equal(restored.body.archivedAt, null)
+
+  const notifications = await request('/notifications', {
+    token: fixture.users.admin.token
+  })
+  assert.equal(notifications.status, 200)
+  assert.equal(
+    notifications.body.some((item) => item.type === 'CARD_ASSIGNED'),
+    true
+  )
+  assert.equal(
+    notifications.body.some((item) => item.type === 'CARD_MENTIONED'),
+    true
+  )
 })
 
 test('keeps cross-column moves atomic and records precise activity', { skip: skipReason }, async () => {

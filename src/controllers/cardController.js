@@ -78,6 +78,21 @@ const getArchivedByBoardId = async (req, res, next) => {
   }
 }
 
+const move = async (req, res, next) => {
+  try {
+    const card = await cardService.move(
+      req.params.id,
+      req.body.targetColumnId,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    res.status(StatusCodes.OK).json(card)
+  } catch (error) {
+    next(error)
+  }
+}
+
 const addAttachment = async (req, res, next) => {
   try {
     const card = await cardService.addAttachment(
@@ -114,6 +129,7 @@ export const cardController = {
   setArchived,
   copy,
   getArchivedByBoardId,
+  move,
   addAttachment,
   removeAttachment
 }

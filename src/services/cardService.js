@@ -7,7 +7,8 @@ import ApiError from '~/utils/ApiError'
 import {
   ACTIVITY_ACTIONS,
   ACTIVITY_ENTITY_TYPES,
-  CARD_MEMBER_ACTIONS
+  CARD_MEMBER_ACTIONS,
+  NOTIFICATION_TYPES
 } from '~/utils/constants'
 import { getBoardUserIds } from '~/utils/boardPermissions'
 import { userModel } from '~/models/userModel'
@@ -15,6 +16,7 @@ import { WITH_TRANSACTION } from '~/config/mongodb'
 import { activityService } from '~/services/activityService'
 import { ObjectId } from 'mongodb'
 import { logger } from '~/utils/logger'
+import { notificationService } from '~/services/notificationService'
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
 
@@ -145,6 +147,7 @@ const update = async (
     }
 
     let cardMutation
+    let notification
     let activityAction = reqBody.dueDate !== undefined
       ? ACTIVITY_ACTIONS.CARD_DUE_DATE_CHANGED
       : ACTIVITY_ACTIONS.CARD_UPDATED
@@ -184,6 +187,27 @@ const update = async (
         cardModel.unShiftNewComment(cardId, commentData, session)
       activityAction = ACTIVITY_ACTIONS.CARD_COMMENTED
       activityMetadata = {}
+      const mentionedEmails = [
+        ...new Set(
+          [...commentData.content.matchAll(
+            /@([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g
+          )].map((match) => match[1].toLowerCase())
+        )
+      ]
+      const mentionedUsers = (await Promise.all(
+        mentionedEmails.map((email) => userModel.findOneByEmail(email))
+      )).filter(Boolean)
+      const boardUserIds = new Set(getBoardUserIds(authorizedBoard))
+      const mentionedUserIds = mentionedUsers
+        .map((user) => user._id.toString())
+        .filter((userId) => boardUserIds.has(userId) && userId !== userInfo._id)
+      if (mentionedUserIds.length) {
+        notification = {
+          userIds: mentionedUserIds,
+          type: NOTIFICATION_TYPES.CARD_MENTIONED,
+          message: `You were mentioned on card “${currentCard.title}”.`
+        }
+      }
     } else if (updateData.commentToUpdate) {
       const comment = currentCard.comments?.find(
         (item) => item._id === updateData.commentToUpdate.commentId
@@ -270,14 +294,42 @@ const update = async (
           ? ACTIVITY_ACTIONS.CARD_MEMBER_ADDED
           : ACTIVITY_ACTIONS.CARD_MEMBER_REMOVED
       activityMetadata = { targetUserId }
+      if (
+        updateData.incommingMemberInfo.action === CARD_MEMBER_ACTIONS.ADD &&
+        targetUserId !== userInfo._id
+      ) {
+        notification = {
+          userIds: [targetUserId],
+          type: NOTIFICATION_TYPES.CARD_ASSIGNED,
+          message: `You were assigned to card “${currentCard.title}”.`
+        }
+      }
     } else {
       cardMutation = (session) => cardModel.update(cardId, updateData, session)
       const completedChecklist = updateData.checklist?.length > 0 &&
         updateData.checklist.every((item) => item.isCompleted)
       const wasChecklistCompleted = currentCard.checklist?.length > 0 &&
         currentCard.checklist.every((item) => item.isCompleted)
-      if (completedChecklist && !wasChecklistCompleted) {
+      if (reqBody.completedAt && !currentCard.completedAt) {
+        activityAction = ACTIVITY_ACTIONS.CARD_COMPLETED
+        notification = {
+          userIds: [
+            ...(currentCard.memberIds || []),
+            ...(currentCard.watcherIds || [])
+          ].map(String).filter((userId) => userId !== userInfo._id),
+          type: NOTIFICATION_TYPES.CARD_COMPLETED,
+          message: `Card “${currentCard.title}” was completed.`
+        }
+      } else if (completedChecklist && !wasChecklistCompleted) {
         activityAction = ACTIVITY_ACTIONS.CARD_CHECKLIST_COMPLETED
+        notification = {
+          userIds: [
+            ...(currentCard.memberIds || []),
+            ...(currentCard.watcherIds || [])
+          ].map(String).filter((userId) => userId !== userInfo._id),
+          type: NOTIFICATION_TYPES.CARD_CHECKLIST_COMPLETED,
+          message: `Checklist completed on card “${currentCard.title}”.`
+        }
       }
     }
 
@@ -297,6 +349,20 @@ const update = async (
         },
         session
       )
+      if (notification?.userIds.length) {
+        await notificationService.createForUsers(
+          notification.userIds,
+          {
+            actorId: userInfo._id,
+            boardId: authorizedBoard._id.toString(),
+            cardId,
+            type: notification.type,
+            message: notification.message,
+            dedupeKey: `${notification.type}:${cardId}:${new ObjectId()}`
+          },
+          session
+        )
+      }
       return updatedCard
     })
   } catch (error) {
@@ -310,6 +376,7 @@ const setArchived = async (cardId, archived, userInfo, authorizedBoard) => {
     if (!card || card.boardId.toString() !== authorizedBoard._id.toString()) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Card not found!')
     }
+    if (Boolean(card.archivedAt) === archived) return card
 
     const archivedAt = archived ? Date.now() : null
     const archivedBy = archived ? userInfo._id : null
@@ -376,7 +443,9 @@ const copy = async (cardId, reqBody, userInfo, authorizedBoard) => {
         completedAt: null,
         completedBy: null
       })),
-      attachments: sourceCard.attachments || [],
+      // Cloud resources have a single lifecycle owner; copied cards start
+      // without attachments so deleting one card cannot break another.
+      attachments: [],
       memberIds: (sourceCard.memberIds || []).map(String),
       watcherIds: (sourceCard.watcherIds || []).map(String),
       comments: []
@@ -405,6 +474,69 @@ const copy = async (cardId, reqBody, userInfo, authorizedBoard) => {
 
 const getArchivedByBoardId = async (boardId) =>
   await cardModel.findArchivedByBoardId(boardId)
+
+const move = async (cardId, targetColumnId, userInfo, authorizedBoard) =>
+  await WITH_TRANSACTION(async (session) => {
+    const [card, targetColumn] = await Promise.all([
+      cardModel.findOneById(cardId, session),
+      columnModel.findOneById(targetColumnId, session)
+    ])
+    const boardId = authorizedBoard._id.toString()
+    if (!card || card.boardId.toString() !== boardId) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Card not found!')
+    }
+    if (!targetColumn || targetColumn.boardId.toString() !== boardId) {
+      throw new ApiError(
+        StatusCodes.UNPROCESSABLE_ENTITY,
+        'Target column must belong to the same board.'
+      )
+    }
+    const previousColumnId = card.columnId.toString()
+    if (previousColumnId === targetColumnId) return card
+
+    const [previousColumn, nextColumn, updatedCard] = await Promise.all([
+      columnModel.removeCardOrderId(previousColumnId, cardId, session),
+      columnModel.addCardOrderId(targetColumnId, cardId, session),
+      cardModel.update(
+        cardId,
+        { columnId: targetColumnId, updatedAt: Date.now() },
+        session
+      )
+    ])
+    if (!previousColumn || !nextColumn || !updatedCard) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Card or column not found!')
+    }
+    await activityService.createNew(
+      {
+        boardId,
+        actorId: userInfo._id,
+        action: ACTIVITY_ACTIONS.CARD_MOVED,
+        entityType: ACTIVITY_ENTITY_TYPES.CARD,
+        entityId: cardId,
+        metadata: { fromColumnId: previousColumnId, toColumnId: targetColumnId }
+      },
+      session
+    )
+    const notificationRecipients = [
+      ...(card.memberIds || []),
+      ...(card.watcherIds || [])
+    ].map(String).filter((userId) => userId !== userInfo._id)
+    if (notificationRecipients.length) {
+      await notificationService.createForUsers(
+        notificationRecipients,
+        {
+          actorId: userInfo._id,
+          boardId,
+          cardId,
+          type: NOTIFICATION_TYPES.CARD_MOVED,
+          message: `Card “${card.title}” was moved.`,
+          dedupeKey: `${NOTIFICATION_TYPES.CARD_MOVED}:${cardId}:${new ObjectId()}`
+        },
+        session
+      )
+    }
+    return updatedCard
+  })
 
 const addAttachment = async (cardId, file, userInfo, authorizedBoard) => {
   if (!file) {
@@ -507,6 +639,7 @@ export const cardService = {
   setArchived,
   copy,
   getArchivedByBoardId,
+  move,
   addAttachment,
   removeAttachment
 }
