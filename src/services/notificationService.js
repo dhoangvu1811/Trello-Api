@@ -8,11 +8,13 @@ const create = async (data, session) =>
 
 const createForUsers = async (userIds, data, session) => {
   const uniqueUserIds = [...new Set(userIds.map(String))]
-  await Promise.all(uniqueUserIds.map((userId) => create({
-    ...data,
-    userId,
-    dedupeKey: `${data.dedupeKey}:${userId}`
-  }, session)))
+  for (const userId of uniqueUserIds) {
+    await create({
+      ...data,
+      userId,
+      dedupeKey: `${data.dedupeKey}:${userId}`
+    }, session)
+  }
 }
 
 const syncDueDateNotifications = async (userId) => {
@@ -31,6 +33,7 @@ const syncDueDateNotifications = async (userId) => {
       archivedAt: null,
       _destroy: false
     })
+    .limit(500)
     .toArray()
 
   await Promise.all(cards.map((card) => {

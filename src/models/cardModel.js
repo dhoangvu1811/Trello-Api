@@ -171,6 +171,7 @@ const findArchivedByBoardId = async (boardId) => {
       _destroy: false
     })
     .sort({ archivedAt: -1, _id: -1 })
+    .limit(100)
     .toArray()
 }
 

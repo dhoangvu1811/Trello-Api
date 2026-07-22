@@ -194,6 +194,12 @@ const update = async (
           )].map((match) => match[1].toLowerCase())
         )
       ]
+      if (mentionedEmails.length > 20) {
+        throw new ApiError(
+          StatusCodes.UNPROCESSABLE_ENTITY,
+          'A comment cannot mention more than 20 users.'
+        )
+      }
       const mentionedUsers = (await Promise.all(
         mentionedEmails.map((email) => userModel.findOneByEmail(email))
       )).filter(Boolean)
@@ -410,10 +416,11 @@ const setArchived = async (cardId, archived, userInfo, authorizedBoard) => {
 
 const copy = async (cardId, reqBody, userInfo, authorizedBoard) => {
   return await WITH_TRANSACTION(async (session) => {
-    const [sourceCard, targetColumn] = await Promise.all([
-      cardModel.findOneById(cardId, session),
-      columnModel.findOneById(reqBody.targetColumnId, session)
-    ])
+    const sourceCard = await cardModel.findOneById(cardId, session)
+    const targetColumn = await columnModel.findOneById(
+      reqBody.targetColumnId,
+      session
+    )
     const boardId = authorizedBoard._id.toString()
     if (!sourceCard || sourceCard.boardId.toString() !== boardId) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Source card not found!')
@@ -477,10 +484,8 @@ const getArchivedByBoardId = async (boardId) =>
 
 const move = async (cardId, targetColumnId, userInfo, authorizedBoard) =>
   await WITH_TRANSACTION(async (session) => {
-    const [card, targetColumn] = await Promise.all([
-      cardModel.findOneById(cardId, session),
-      columnModel.findOneById(targetColumnId, session)
-    ])
+    const card = await cardModel.findOneById(cardId, session)
+    const targetColumn = await columnModel.findOneById(targetColumnId, session)
     const boardId = authorizedBoard._id.toString()
     if (!card || card.boardId.toString() !== boardId) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Card not found!')
@@ -494,15 +499,21 @@ const move = async (cardId, targetColumnId, userInfo, authorizedBoard) =>
     const previousColumnId = card.columnId.toString()
     if (previousColumnId === targetColumnId) return card
 
-    const [previousColumn, nextColumn, updatedCard] = await Promise.all([
-      columnModel.removeCardOrderId(previousColumnId, cardId, session),
-      columnModel.addCardOrderId(targetColumnId, cardId, session),
-      cardModel.update(
-        cardId,
-        { columnId: targetColumnId, updatedAt: Date.now() },
-        session
-      )
-    ])
+    const previousColumn = await columnModel.removeCardOrderId(
+      previousColumnId,
+      cardId,
+      session
+    )
+    const nextColumn = await columnModel.addCardOrderId(
+      targetColumnId,
+      cardId,
+      session
+    )
+    const updatedCard = await cardModel.update(
+      cardId,
+      { columnId: targetColumnId, updatedAt: Date.now() },
+      session
+    )
     if (!previousColumn || !nextColumn || !updatedCard) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Card or column not found!')
     }
