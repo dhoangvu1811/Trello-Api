@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import express from 'express'
 import cors from 'cors'
 import { corsOptions } from '~/config/cors'
@@ -10,10 +9,16 @@ import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware'
 import cookieParser from 'cookie-parser'
 import socketIo from 'socket.io'
 import http from 'http'
-import { inviteUserToBoardSocket } from './sockets/inviteUserToBoardSocket'
+import {
+  authenticateSocket,
+  registerBoardSocket
+} from './sockets/inviteUserToBoardSocket'
+import { logger } from '~/utils/logger'
 
-const START_EXPRESS = () => {
+export const CREATE_HTTP_SERVER = () => {
   const app = express()
+
+  if (env.BUILD_MODE === 'production') app.set('trust proxy', 1)
 
   //Fix cái vụ Cache from disk của ExpressJS
   app.use((req, res, next) => {
@@ -40,9 +45,17 @@ const START_EXPRESS = () => {
   const server = http.createServer(app)
   // Khởi tạo biến io với server và cors
   const io = socketIo(server, { cors: corsOptions })
+  app.set('io', io)
+  io.use(authenticateSocket)
   io.on('connection', (socket) => {
-    inviteUserToBoardSocket(socket)
+    registerBoardSocket(socket)
   })
+
+  return { app, server, io }
+}
+
+const START_EXPRESS = () => {
+  const { server, io } = CREATE_HTTP_SERVER()
 
   const port = Number(env.PORT)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -53,25 +66,32 @@ const START_EXPRESS = () => {
 
   // Dùng HTTP server để Express và Socket.IO cùng lắng nghe trên một cổng.
   server.listen(port, host, () => {
-    console.log(
-      `3. ${env.BUILD_MODE.toUpperCase()} Hello ${env.AUTHOR}, I am running at HOST: ${host} and PORT: ${port}`
-    )
+    logger.info('HTTP server started', {
+      buildMode: env.BUILD_MODE,
+      host,
+      port,
+      author: env.AUTHOR
+    })
   })
 
   // Chờ Socket.IO và MongoDB đóng xong trước khi kết thúc tiến trình.
   AsyncExitHook((done) => {
-    console.log('4. Server is shutting down...')
+    logger.info('Server is shutting down')
     io.close(async () => {
       try {
         await CLOSE_DB()
-        console.log('5. Disconnected from MongoDB Cloud Atlas!')
+        logger.info('Disconnected from MongoDB')
       } catch (error) {
-        console.error('Failed to close MongoDB connection:', error)
+        logger.error('Failed to close MongoDB connection', {
+          error: error.message
+        })
       } finally {
         done()
       }
     })
   })
+
+  return { server, io }
 }
 
 export const START_SERVER = () => {
@@ -79,16 +99,18 @@ export const START_SERVER = () => {
   //Immediately Invoked / Anonymous Async Functions (IIFE)
   (async () => {
     try {
-      console.log('1. Connecting to MongoDB Cloud Atlas...')
+      logger.info('Connecting to MongoDB')
       await CONNECT_DB()
-      console.log('2. Connected to MongoDB Cloud Atlas!')
+      logger.info('Connected to MongoDB')
       START_EXPRESS()
     } catch (error) {
-      console.error(error)
+      logger.error('Server startup failed', { error: error.message })
       try {
         await CLOSE_DB()
       } catch (closeError) {
-        console.error('Failed to close MongoDB connection:', closeError)
+        logger.error('Failed to close MongoDB after startup error', {
+          error: closeError.message
+        })
       }
       process.exitCode = 1
     }

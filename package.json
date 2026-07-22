@@ -12,6 +12,8 @@
     "clean": "rimraf build && mkdir build",
     "build-babel": "babel ./src -d ./build/src",
     "build": "npm run clean && npm run build-babel",
+    "test": "npm run build && node --test --test-concurrency=1",
+    "test:integration": "npm run build && cross-env REQUIRE_PHASE0_INTEGRATION=1 node --test --test-concurrency=1 tests/phase0Integration.test.js",
     "start": "cross-env BUILD_MODE=production node ./build/src/server.js",
     "production": "npm run build && cross-env BUILD_MODE=production node ./build/src/server.js",
     "dev": "cross-env BUILD_MODE=dev nodemon --exec babel-node ./src/server.js"
@@ -22,6 +24,7 @@
     "async-exit-hook": "^2.0.1",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.0.0",
+    "cookie": "^0.7.2",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
@@ -48,6 +51,7 @@
     "babel-plugin-module-resolver": "^5.0.0",
     "eslint": "^8.47.0",
     "nodemon": "^3.0.1",
-    "rimraf": "4"
+    "rimraf": "4",
+    "socket.io-client": "4.7.4"
   }
 }

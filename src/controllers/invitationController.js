@@ -1,5 +1,7 @@
 import { StatusCodes } from 'http-status-codes'
 import { invitationService } from '~/services/invitationService'
+import { BOARD_INVITATION_STATUS } from '~/utils/constants'
+import { emitBoardUpdated } from '~/sockets/boardEvents'
 
 const createNewBoardInvitation = async (req, res, next) => {
   try {
@@ -9,6 +11,11 @@ const createNewBoardInvitation = async (req, res, next) => {
       req.body,
       inviterId
     )
+
+    req.app
+      .get('io')
+      .to(`user:${resInvitation.inviteeId.toString()}`)
+      .emit('BE_USER_INVITED_TO_BOARD', resInvitation)
 
     res.status(StatusCodes.CREATED).json(resInvitation)
   } catch (error) {
@@ -38,6 +45,9 @@ const updateBoardInvitation = async (req, res, next) => {
       status
     )
 
+    if (status === BOARD_INVITATION_STATUS.ACCEPTED) {
+      emitBoardUpdated(req, updatedInvitations.boardInvitation.boardId)
+    }
     res.status(StatusCodes.OK).json(updatedInvitations)
   } catch (error) {
     next(error)

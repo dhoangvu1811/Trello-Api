@@ -1,14 +1,19 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { cardService } from '~/services/cardService'
+import { emitBoardUpdated } from '~/sockets/boardEvents'
 
 const createNew = async (req, res, next) => {
   try {
     // console.log('req.body', req.body)
     // throw new ApiError(StatusCodes.BAD_GATEWAY, 'test')
 
-    const createCard = await cardService.createNew(req.body)
+    const createCard = await cardService.createNew(
+      req.body,
+      req.jwtDecoded._id
+    )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.CREATED).json(createCard)
   } catch (error) {
     next(error)
@@ -23,9 +28,11 @@ const update = async (req, res, next) => {
       cardId,
       req.body,
       cardCoverFile,
-      userInfo
+      userInfo,
+      req.authorizedBoard
     )
 
+    emitBoardUpdated(req)
     res.status(StatusCodes.OK).json(updatedCard)
   } catch (error) {
     next(error)

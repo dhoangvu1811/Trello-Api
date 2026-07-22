@@ -2,11 +2,18 @@ import { StatusCodes } from 'http-status-codes'
 import ms from 'ms'
 import { userService } from '~/services/userService'
 import ApiError from '~/utils/ApiError'
+import { env } from '~/config/environment'
+import { AUTH_COOKIE_NAMES, AUTH_COOKIE_OPTIONS } from '~/config/authCookie'
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'none'
+const setAuthCookies = (res, result) => {
+  res.cookie(AUTH_COOKIE_NAMES.access, result.accessToken, {
+    ...AUTH_COOKIE_OPTIONS,
+    maxAge: ms(env.ACCESS_TOKEN_LIFE)
+  })
+  res.cookie(AUTH_COOKIE_NAMES.refresh, result.refreshToken, {
+    ...AUTH_COOKIE_OPTIONS,
+    maxAge: Math.max(0, result.sessionExpiresAt - Date.now())
+  })
 }
 
 const createNew = async (req, res, next) => {
@@ -33,20 +40,13 @@ const login = async (req, res, next) => {
   try {
     const result = await userService.login(req.body)
 
-    /**
-     * Xử lý trả về http cookie cho phía trình duyệt
-     * đối với maxage - thời gian sống của cookie thì chúng ta để tối đa 14 ngày,tuỳ từng dự án
-    */
-    res.cookie('accessToken', result.accessToken, {
-      ...COOKIE_OPTIONS,
-      maxAge: ms('14 days')
-    })
-    res.cookie('refreshToken', result.refreshToken, {
-      ...COOKIE_OPTIONS,
-      maxAge: ms('14 days')
-    })
+    setAuthCookies(res, result)
 
-    res.status(StatusCodes.OK).json(result)
+    res.status(StatusCodes.OK).json({
+      user: result.user,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      sessionExpiresAt: result.sessionExpiresAt
+    })
   } catch (error) {
     next(error)
   }
@@ -54,10 +54,13 @@ const login = async (req, res, next) => {
 
 const logout = async (req, res, next) => {
   try {
-    //Xoá cookie (làm ngược lại so với việc gắn cookie trên hàm login)
-    res.clearCookie('accessToken', COOKIE_OPTIONS)
-    res.clearCookie('refreshToken', COOKIE_OPTIONS)
-
+    const clientRefreshToken = req.cookies?.[AUTH_COOKIE_NAMES.refresh]
+    res.clearCookie(AUTH_COOKIE_NAMES.access, AUTH_COOKIE_OPTIONS)
+    res.clearCookie(AUTH_COOKIE_NAMES.refresh, AUTH_COOKIE_OPTIONS)
+    const sessionId = await userService.logout(clientRefreshToken)
+    if (sessionId) {
+      req.app.get('io').in(`session:${sessionId}`).disconnectSockets(true)
+    }
     res.status(StatusCodes.OK).json({ loggedOut: true })
   } catch (error) {
     next(error)
@@ -66,13 +69,15 @@ const logout = async (req, res, next) => {
 
 const refreshToken = async (req, res, next) => {
   try {
-    const result = await userService.refreshToken(req.cookies?.refreshToken)
-    res.cookie('accessToken', result.accessToken, {
-      ...COOKIE_OPTIONS,
-      maxAge: ms('14 days')
-    })
+    const result = await userService.refreshToken(
+      req.cookies?.[AUTH_COOKIE_NAMES.refresh]
+    )
+    setAuthCookies(res, result)
 
-    res.status(StatusCodes.OK).json(result)
+    res.status(StatusCodes.OK).json({
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      sessionExpiresAt: result.sessionExpiresAt
+    })
   } catch (error) {
     next(new ApiError(StatusCodes.UNAUTHORIZED, 'Please Sign In!'))
   }
@@ -87,8 +92,51 @@ const update = async (req, res, next) => {
       req.body,
       userAvatarFile
     )
+    if (req.body.current_password && req.body.new_password) {
+      req.app
+        .get('io')
+        .in(`user:${userId}`)
+        .disconnectSockets(true)
+    }
 
     res.status(StatusCodes.OK).json(updateUser)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const getSession = async (req, res, next) => {
+  try {
+    const session = userService.getSession(
+      req.authenticatedUser,
+      req.authSession,
+      req.jwtDecoded
+    )
+    res.status(StatusCodes.OK).json(session)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const forgotPassword = async (req, res, next) => {
+  try {
+    await userService.forgotPassword(req.body.email)
+    res.status(StatusCodes.OK).json({
+      message: 'If that account exists, a password reset email has been sent.'
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const userId = await userService.resetPassword(
+      req.body.token,
+      req.body.password
+    )
+    req.app.get('io').in(`user:${userId}`).disconnectSockets(true)
+    res.status(StatusCodes.OK).json({ passwordReset: true })
   } catch (error) {
     next(error)
   }
@@ -100,5 +148,8 @@ export const userController = {
   login,
   logout,
   refreshToken,
-  update
+  getSession,
+  update,
+  forgotPassword,
+  resetPassword
 }

@@ -1,8 +1,8 @@
 import Joi from 'joi'
 import { ObjectId } from 'mongodb'
-import { GET_DB } from '~/config/mongodb'
+import { GET_DB, SESSION_OPTIONS } from '~/config/mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
-import { BOARD_TYPE } from '~/utils/constants'
+import { BOARD_ROLES, BOARD_TYPE } from '~/utils/constants'
 import { columnModel } from '~/models/columnModel'
 import { cardModel } from '~/models/cardModel'
 import { pagingSkipValue } from '~/utils/algorithms'
@@ -28,13 +28,36 @@ const BOARD_COLLECTION_SCHEMA = Joi.object({
   memberIds: Joi.array()
     .items(Joi.string().pattern(OBJECT_ID_RULE).message(OBJECT_ID_RULE_MESSAGE))
     .default([]),
+  memberRoles: Joi.array()
+    .items(
+      Joi.object({
+        userId: Joi.string()
+          .required()
+          .pattern(OBJECT_ID_RULE)
+          .message(OBJECT_ID_RULE_MESSAGE),
+        role: Joi.string()
+          .required()
+          .valid(
+            BOARD_ROLES.ADMIN,
+            BOARD_ROLES.MEMBER,
+            BOARD_ROLES.VIEWER
+          )
+      })
+    )
+    .default([]),
   createdAt: Joi.date().timestamp('javascript').default(Date.now),
   updatedAt: Joi.date().timestamp('javascript').default(null),
   _destroy: Joi.boolean().default(false)
 })
 
 // Chỉ định ra các trường không cho phép cập nhật trong hàm update
-const INVALID_UPDATE_FIELDS = ['_id', 'createdAt']
+const INVALID_UPDATE_FIELDS = [
+  '_id',
+  'createdAt',
+  'ownerIds',
+  'memberIds',
+  'memberRoles'
+]
 
 const validateBeforeCreate = async (data) => {
   return await BOARD_COLLECTION_SCHEMA.validateAsync(data, {
@@ -42,7 +65,7 @@ const validateBeforeCreate = async (data) => {
   })
 }
 
-const createNew = async (userId, data) => {
+const createNew = async (userId, data, session) => {
   try {
     const validDate = await validateBeforeCreate(data)
     const newBoardToAdd = {
@@ -52,7 +75,7 @@ const createNew = async (userId, data) => {
 
     const createdBoard = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
-      .insertOne(newBoardToAdd)
+      .insertOne(newBoardToAdd, SESSION_OPTIONS(session))
 
     return createdBoard
   } catch (error) {
@@ -60,13 +83,14 @@ const createNew = async (userId, data) => {
   }
 }
 
-const findOneById = async (boardId) => {
+const findOneById = async (boardId, session) => {
   try {
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
-      .findOne({
-        _id: new ObjectId(boardId)
-      })
+      .findOne(
+        { _id: new ObjectId(boardId) },
+        SESSION_OPTIONS(session)
+      )
 
     return result
   } catch (error) {
@@ -117,7 +141,7 @@ const getDetails = async (userId, boardId) => {
             as: 'owners',
             // pipeline trong lookup là để xử lý một hoặc nhiều luồng cần thiết
             // $project để chỉ định vài field không muốn lấy về bằng cách gán nó giá trị bằng 0
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         },
         {
@@ -126,7 +150,7 @@ const getDetails = async (userId, boardId) => {
             localField: 'memberIds',
             foreignField: '_id',
             as: 'members',
-            pipeline: [{ $project: { password: 0, verifyToken: 0 } }]
+            pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
           }
         }
       ])
@@ -139,14 +163,14 @@ const getDetails = async (userId, boardId) => {
 }
 
 // push một giá trị columnId vào cuối mảng columnOrderIds
-const pushColumnOrderIds = async (column) => {
+const pushColumnOrderIds = async (column, session) => {
   try {
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
       .findOneAndUpdate(
         { _id: new ObjectId(column.boardId) },
         { $push: { columnOrderIds: new ObjectId(column._id) } },
-        { returnDocument: 'after' }
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result
@@ -155,14 +179,24 @@ const pushColumnOrderIds = async (column) => {
   }
 }
 
-const pushMembersIds = async (boardId, userId) => {
+const pushMembersIds = async (
+  boardId,
+  userId,
+  role = BOARD_ROLES.MEMBER,
+  session
+) => {
   try {
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
       .findOneAndUpdate(
         { _id: new ObjectId(boardId) },
-        { $push: { memberIds: new ObjectId(userId) } },
-        { returnDocument: 'after' }
+        {
+          $addToSet: {
+            memberIds: new ObjectId(userId),
+            memberRoles: { userId: new ObjectId(userId), role }
+          }
+        },
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result
@@ -171,15 +205,37 @@ const pushMembersIds = async (boardId, userId) => {
   }
 }
 
+const setMemberRole = async (boardId, userId, role, session) => {
+  const board = await findOneById(boardId, session)
+  if (!board) return null
+
+  const normalizedUserId = userId.toString()
+  const memberRoles = (board.memberRoles || []).filter(
+    (memberRole) => memberRole.userId.toString() !== normalizedUserId
+  )
+  memberRoles.push({ userId: new ObjectId(normalizedUserId), role })
+
+  return await GET_DB()
+    .collection(BOARD_COLLECTION_NAME)
+    .findOneAndUpdate(
+      {
+        _id: new ObjectId(boardId),
+        memberIds: new ObjectId(normalizedUserId)
+      },
+      { $set: { memberRoles, updatedAt: Date.now() } },
+      SESSION_OPTIONS(session, { returnDocument: 'after' })
+    )
+}
+
 //Lấy 1 phẩn tử trong mảng columnOrderIds ra và xoá đi
-const pullColumnOrderIds = async (column) => {
+const pullColumnOrderIds = async (column, session) => {
   try {
     const result = await GET_DB()
       .collection(BOARD_COLLECTION_NAME)
       .findOneAndUpdate(
         { _id: new ObjectId(column.boardId) },
         { $pull: { columnOrderIds: new ObjectId(column._id) } },
-        { returnDocument: 'after' }
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result
@@ -188,7 +244,7 @@ const pullColumnOrderIds = async (column) => {
   }
 }
 
-const update = async (boardId, updateData) => {
+const update = async (boardId, updateData, session) => {
   try {
     // Lọc những trường không cho phép cập nhật
     Object.keys(updateData).forEach((fieldName) => {
@@ -209,7 +265,7 @@ const update = async (boardId, updateData) => {
       .findOneAndUpdate(
         { _id: new ObjectId(boardId) },
         { $set: updateData },
-        { returnDocument: 'after' } // Trả về kết quả mới sau khi cập nhật
+        SESSION_OPTIONS(session, { returnDocument: 'after' })
       )
 
     return result
@@ -295,5 +351,6 @@ export const boardModel = {
   update,
   pullColumnOrderIds,
   getBoards,
-  pushMembersIds
+  pushMembersIds,
+  setMemberRole
 }

@@ -4,58 +4,125 @@ import { boardModel } from '~/models/boardModel'
 import { cardModel } from '~/models/cardModel'
 import { columnModel } from '~/models/columnModel'
 import ApiError from '~/utils/ApiError'
+import { hasSameIds } from '~/utils/resourceOrder'
+import { WITH_TRANSACTION } from '~/config/mongodb'
+import { activityService } from '~/services/activityService'
+import { ACTIVITY_ACTIONS, ACTIVITY_ENTITY_TYPES } from '~/utils/constants'
 
-const createNew = async (reqBody) => {
+const createNew = async (reqBody, actorId) => {
   try {
     // Xử lý logic
     const newColumn = {
       ...reqBody
     }
 
-    //Gọi tới model để xử lý lưu bản ghi trong DB
-    const createdColumn = await columnModel.createNew(newColumn)
-    const getNewColumn = await columnModel.findOneById(createdColumn.insertedId)
+    return await WITH_TRANSACTION(async (session) => {
+      const createdColumn = await columnModel.createNew(newColumn, session)
+      const getNewColumn = await columnModel.findOneById(
+        createdColumn.insertedId,
+        session
+      )
 
-    if (getNewColumn) {
-      // Xử lý cấu trúc data trước khi trả dữ liệu về
       getNewColumn.cards = []
+      const updatedBoard = await boardModel.pushColumnOrderIds(
+        getNewColumn,
+        session
+      )
+      if (!updatedBoard)
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Board not found!')
 
-      //Cập nhật lại mảng columnOrderIds trong collection boards
-      await boardModel.pushColumnOrderIds(getNewColumn)
-    }
+      await activityService.createNew(
+        {
+          boardId: getNewColumn.boardId.toString(),
+          actorId,
+          action: ACTIVITY_ACTIONS.COLUMN_CREATED,
+          entityType: ACTIVITY_ENTITY_TYPES.COLUMN,
+          entityId: getNewColumn._id.toString()
+        },
+        session
+      )
 
-    return getNewColumn
+      return getNewColumn
+    })
   } catch (error) {
     throw error
   }
 }
 
-const update = async (columnId, reqBody) => {
+const update = async (columnId, reqBody, actorId) => {
   try {
-    const updateData = {
-      ...reqBody,
-      updatedAt: Date.now()
-    }
-    const updatedColumn = await columnModel.update(columnId, updateData)
+    return await WITH_TRANSACTION(async (session) => {
+      const targetColumn = await columnModel.findOneById(columnId, session)
+      if (!targetColumn)
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Column not found!')
 
-    return updatedColumn
+      if (reqBody.cardOrderIds) {
+        const cards = await cardModel.findByColumnIds([columnId], session)
+        if (!hasSameIds(cards.map((card) => card._id), reqBody.cardOrderIds)) {
+          throw new ApiError(
+            StatusCodes.UNPROCESSABLE_ENTITY,
+            'Card order must contain every card in this column exactly once.'
+          )
+        }
+      }
+
+      const updateData = { ...reqBody, updatedAt: Date.now() }
+      const updatedColumn = await columnModel.update(
+        columnId,
+        updateData,
+        session
+      )
+      await activityService.createNew(
+        {
+          boardId: targetColumn.boardId.toString(),
+          actorId,
+          action: ACTIVITY_ACTIONS.COLUMN_UPDATED,
+          entityType: ACTIVITY_ENTITY_TYPES.COLUMN,
+          entityId: columnId,
+          metadata: { fields: Object.keys(reqBody) }
+        },
+        session
+      )
+
+      return updatedColumn
+    })
   } catch (error) {
     throw error
   }
 }
-const deleteItem = async (columnId) => {
+const deleteItem = async (columnId, actorId) => {
   try {
-    const targetColumn = await columnModel.findOneById(columnId)
-    if (!targetColumn) {
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Column not found!')
-    }
-    //Xoá column
-    await columnModel.deleteOnebyId(columnId)
-    //Xoá toàn bộ cards thuộc column trên
-    await cardModel.deleteManyByColumnId(columnId)
-    //Xoá đi column trong mảng columnOrderIds của board
-    await boardModel.pullColumnOrderIds(targetColumn)
-    return { deleteResult: 'Column and its Cards deleted successfully!' }
+    return await WITH_TRANSACTION(async (session) => {
+      const targetColumn = await columnModel.findOneById(columnId, session)
+      if (!targetColumn)
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Column not found!')
+
+      const deleteResult = await columnModel.deleteOnebyId(columnId, session)
+      await cardModel.deleteManyByColumnId(columnId, session)
+      const updatedBoard = await boardModel.pullColumnOrderIds(
+        targetColumn,
+        session
+      )
+      if (!deleteResult.deletedCount || !updatedBoard) {
+        throw new ApiError(
+          StatusCodes.NOT_FOUND,
+          'Column or parent board not found!'
+        )
+      }
+
+      await activityService.createNew(
+        {
+          boardId: targetColumn.boardId.toString(),
+          actorId,
+          action: ACTIVITY_ACTIONS.COLUMN_DELETED,
+          entityType: ACTIVITY_ENTITY_TYPES.COLUMN,
+          entityId: columnId
+        },
+        session
+      )
+
+      return { deleteResult: 'Column and its Cards deleted successfully!' }
+    })
   } catch (error) {
     throw error
   }
