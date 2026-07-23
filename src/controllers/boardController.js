@@ -6,7 +6,11 @@ import {
   DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_PAGE
 } from '~/utils/constants'
-import { emitBoardUpdated } from '~/sockets/boardEvents'
+import {
+  emitBoardUpdated,
+  emitCardNotificationsUpdated
+} from '~/sockets/boardEvents'
+import { getBoardUserIds } from '~/utils/boardPermissions'
 
 const createNew = async (req, res, next) => {
   try {
@@ -58,6 +62,10 @@ const moveCardToDifferentColumn = async (req, res, next) => {
     )
 
     emitBoardUpdated(req)
+    emitCardNotificationsUpdated(
+      req,
+      getBoardUserIds(req.authorizedBoard)
+    )
     res.status(StatusCodes.OK).json(result)
   } catch (error) {
     next(error)

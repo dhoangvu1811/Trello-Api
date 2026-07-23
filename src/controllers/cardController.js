@@ -1,7 +1,14 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { cardService } from '~/services/cardService'
-import { emitBoardUpdated } from '~/sockets/boardEvents'
+import {
+  emitBoardUpdated,
+  emitCardNotificationsUpdated
+} from '~/sockets/boardEvents'
+import { getBoardUserIds } from '~/utils/boardPermissions'
+
+const emitNotificationRefresh = (req) =>
+  emitCardNotificationsUpdated(req, getBoardUserIds(req.authorizedBoard))
 
 const createNew = async (req, res, next) => {
   try {
@@ -33,6 +40,14 @@ const update = async (req, res, next) => {
     )
 
     emitBoardUpdated(req)
+    if (
+      req.body.commentToAdd ||
+      req.body.incommingMemberInfo ||
+      Object.prototype.hasOwnProperty.call(req.body, 'completedAt') ||
+      req.body.checklist
+    ) {
+      emitNotificationRefresh(req)
+    }
     res.status(StatusCodes.OK).json(updatedCard)
   } catch (error) {
     next(error)
@@ -87,6 +102,7 @@ const move = async (req, res, next) => {
       req.authorizedBoard
     )
     emitBoardUpdated(req)
+    emitNotificationRefresh(req)
     res.status(StatusCodes.OK).json(card)
   } catch (error) {
     next(error)
