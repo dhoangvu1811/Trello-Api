@@ -1,6 +1,7 @@
 import { MongoClient, ServerApiVersion } from 'mongodb'
 import { env } from '~/config/environment'
 import { ENSURE_DATABASE_INDEXES } from '~/config/databaseIndexes'
+import { ENSURE_CARD_PHASE_ONE_DATA } from '~/config/databaseMigrations'
 
 //Khởi tạo một đối tượng trelloDatabaseInstance ban đầu là null (Vì chưa connect)
 let trelloDatabaseInstance = null
@@ -22,6 +23,7 @@ export const CONNECT_DB = async () => {
 
   //Kết nối thành công thì lấy ra database theo tên và gán vào biến trelloDatabaseInstance
   trelloDatabaseInstance = mongoClientInstance.db(env.DATABASE_NAME)
+  await ENSURE_CARD_PHASE_ONE_DATA(trelloDatabaseInstance)
   await ENSURE_DATABASE_INDEXES(trelloDatabaseInstance)
 }
 

@@ -54,14 +54,30 @@ export const normalizeCardDetails = (currentCard, reqBody, userInfo, board) => {
   }
 
   if (reqBody.checklist) {
-    updateData.checklist = reqBody.checklist.map((item) => ({
-      ...item,
-      _id: item._id || new ObjectId().toString(),
-      completedAt: item.isCompleted
-        ? item.completedAt || Date.now()
-        : null,
-      completedBy: item.isCompleted ? userInfo._id : null
-    }))
+    const currentChecklistById = new Map(
+      (currentCard.checklist || [])
+        .filter((item) => item._id)
+        .map((item) => [item._id, item])
+    )
+    updateData.checklist = reqBody.checklist.map((item) => {
+      const currentItem = currentChecklistById.get(item._id)
+      const remainsCompleted = item.isCompleted && currentItem?.isCompleted
+
+      return {
+        ...item,
+        _id: item._id || new ObjectId().toString(),
+        completedAt: item.isCompleted
+          ? (remainsCompleted
+            ? currentItem.completedAt ?? Date.now()
+            : Date.now())
+          : null,
+        completedBy: item.isCompleted
+          ? (remainsCompleted
+            ? currentItem.completedBy ?? userInfo._id
+            : userInfo._id)
+          : null
+      }
+    })
   }
 
   return updateData

@@ -17,18 +17,32 @@ const createForUsers = async (userIds, data, session) => {
   }
 }
 
+export const getDueNotificationType = (dueDate, now = Date.now()) =>
+  new Date(dueDate).getTime() < now
+    ? NOTIFICATION_TYPES.CARD_OVERDUE
+    : NOTIFICATION_TYPES.CARD_DUE_SOON
+
 const syncDueDateNotifications = async (userId) => {
   const now = Date.now()
   const dueSoon = now + 24 * 60 * 60 * 1000
   const cards = await GET_DB()
     .collection('cards')
     .find({
-      $or: [
-        { memberIds: new ObjectId(userId) },
-        { watcherIds: new ObjectId(userId) },
-        { watcherIds: userId }
+      $and: [
+        {
+          $or: [
+            { memberIds: new ObjectId(userId) },
+            { watcherIds: new ObjectId(userId) },
+            { watcherIds: userId }
+          ]
+        },
+        {
+          $or: [
+            { dueDate: { $ne: null, $lte: dueSoon } },
+            { dueDate: { $ne: null, $lte: new Date(dueSoon) } }
+          ]
+        }
       ],
-      dueDate: { $ne: null, $lte: dueSoon },
       completedAt: null,
       archivedAt: null,
       _destroy: false
@@ -37,9 +51,7 @@ const syncDueDateNotifications = async (userId) => {
     .toArray()
 
   await Promise.all(cards.map((card) => {
-    const type = card.dueDate < now
-      ? NOTIFICATION_TYPES.CARD_OVERDUE
-      : NOTIFICATION_TYPES.CARD_DUE_SOON
+    const type = getDueNotificationType(card.dueDate, now)
     const dueBucket = new Date(card.dueDate).toISOString().slice(0, 10)
     return create({
       userId,
