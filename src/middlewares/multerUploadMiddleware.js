@@ -8,7 +8,7 @@ import {
 } from '~/utils/validators'
 
 //Function kiểm tra loại file nào được chấp nhận
-const createFileFilter = (allowedTypes, errorMessage) =>
+export const createFileFilter = (allowedTypes, errorMessage) =>
   (req, file, callback) => {
     if (!allowedTypes.includes(file.mimetype)) {
       return callback(
