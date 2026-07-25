@@ -273,8 +273,11 @@ const update = async (
       const reaction = reactions.find(
         (item) => item.emoji === updateData.commentReaction.emoji
       )
+      let reactionAction = 'ADDED'
       if (reaction) {
-        reaction.userIds = reaction.userIds.includes(userInfo._id)
+        const alreadyReacted = reaction.userIds.includes(userInfo._id)
+        reactionAction = alreadyReacted ? 'REMOVED' : 'ADDED'
+        reaction.userIds = alreadyReacted
           ? reaction.userIds.filter((userId) => userId !== userInfo._id)
           : [...reaction.userIds, userInfo._id]
       } else {
@@ -290,7 +293,11 @@ const update = async (
         session
       )
       activityAction = ACTIVITY_ACTIONS.CARD_COMMENT_REACTED
-      activityMetadata = { commentId: comment._id }
+      activityMetadata = {
+        commentId: comment._id,
+        emoji: updateData.commentReaction.emoji,
+        reactionAction
+      }
     } else if (updateData.incommingMemberInfo) {
       const targetUserId = updateData.incommingMemberInfo.userId
       const boardUserIds = getBoardUserIds(authorizedBoard)
@@ -540,7 +547,12 @@ const move = async (cardId, targetColumnId, userInfo, authorizedBoard) =>
         action: ACTIVITY_ACTIONS.CARD_MOVED,
         entityType: ACTIVITY_ENTITY_TYPES.CARD,
         entityId: cardId,
-        metadata: { fromColumnId: previousColumnId, toColumnId: targetColumnId }
+        metadata: {
+          fromColumnId: previousColumnId,
+          fromColumnTitle: previousColumn.title,
+          toColumnId: targetColumnId,
+          toColumnTitle: nextColumn.title
+        }
       },
       session
     )
@@ -660,6 +672,42 @@ const removeAttachment = async (
   return updatedCard
 }
 
+const downloadAttachment = async (
+  cardId,
+  attachmentId,
+  authorizedBoard
+) => {
+  const card = await cardModel.findOneById(cardId)
+  if (!card || card.boardId.toString() !== authorizedBoard._id.toString()) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Card not found!')
+  }
+  const attachment = card.attachments?.find(
+    (item) => item._id === attachmentId
+  )
+  if (!attachment) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Attachment not found!')
+  }
+
+  try {
+    const buffer = await CloudinaryProvider.downloadResource(
+      attachment.url,
+      attachment.size
+    )
+    return { attachment, buffer }
+  } catch (error) {
+    logger.error('Failed to download card attachment', {
+      cardId,
+      attachmentId,
+      publicId: attachment.publicId,
+      error: error.message
+    })
+    throw new ApiError(
+      StatusCodes.BAD_GATEWAY,
+      'Attachment is temporarily unavailable.'
+    )
+  }
+}
+
 export const cardService = {
   createNew,
   update,
@@ -668,5 +716,6 @@ export const cardService = {
   getArchivedByBoardId,
   move,
   addAttachment,
-  removeAttachment
+  removeAttachment,
+  downloadAttachment
 }

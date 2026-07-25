@@ -56,6 +56,12 @@ Router.route('/:id/attachments').post(
   cardController.addAttachment
 )
 
+Router.route('/:id/attachments/:attachmentId/download').get(
+  authMiddleware.isAuthorized,
+  boardAuthorizationMiddleware.requireBoardAccessByCard,
+  cardController.downloadAttachment
+)
+
 Router.route('/:id/attachments/:attachmentId').delete(
   authMiddleware.isAuthorized,
   boardAuthorizationMiddleware.requireBoardContentEditorByCard,

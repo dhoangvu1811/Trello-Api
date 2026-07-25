@@ -509,6 +509,7 @@ test('validates phase one card invariants and attachment lifecycle', {
 
   const originalUpload = modules.CloudinaryProvider.streamUpload
   const originalDestroy = modules.CloudinaryProvider.destroy
+  const originalDownload = modules.CloudinaryProvider.downloadResource
   const destroyed = []
   modules.CloudinaryProvider.streamUpload = async () => ({
     secure_url: 'https://res.cloudinary.com/test/raw/upload/test.txt',
@@ -518,6 +519,14 @@ test('validates phase one card invariants and attachment lifecycle', {
   modules.CloudinaryProvider.destroy = async (...args) => {
     destroyed.push(args)
     return { result: 'ok' }
+  }
+  modules.CloudinaryProvider.downloadResource = async (url, maxBytes) => {
+    assert.equal(
+      url,
+      'https://res.cloudinary.com/test/raw/upload/test.txt'
+    )
+    assert.equal(maxBytes, Buffer.byteLength('phase one attachment'))
+    return Buffer.from('phase one attachment')
   }
   try {
     const form = new FormData()
@@ -537,6 +546,32 @@ test('validates phase one card invariants and attachment lifecycle', {
     assert.equal(attachment.mimeType, 'text/plain')
     assert.equal(attachment.uploadedBy, fixture.ids.member.toString())
 
+    const outsiderDownload = await fetch(
+      `${baseUrl}/V1/cards/${cardId}/attachments/${attachment._id}/download`,
+      {
+        headers: {
+          Cookie: `${AUTH_COOKIE_NAMES.access}=${fixture.users.outsider.token}`
+        }
+      }
+    )
+    assert.equal(outsiderDownload.status, 403)
+
+    const download = await fetch(
+      `${baseUrl}/V1/cards/${cardId}/attachments/${attachment._id}/download`,
+      {
+        headers: {
+          Cookie: `${AUTH_COOKIE_NAMES.access}=${fixture.users.viewer.token}`
+        }
+      }
+    )
+    assert.equal(download.status, 200)
+    assert.match(
+      download.headers.get('content-disposition'),
+      /^attachment; filename="phase-one\.txt"/
+    )
+    assert.match(download.headers.get('content-type'), /^text\/plain/)
+    assert.equal(await download.text(), 'phase one attachment')
+
     const removed = await request(
       `/cards/${cardId}/attachments/${attachment._id}`,
       {
@@ -550,6 +585,7 @@ test('validates phase one card invariants and attachment lifecycle', {
   } finally {
     modules.CloudinaryProvider.streamUpload = originalUpload
     modules.CloudinaryProvider.destroy = originalDestroy
+    modules.CloudinaryProvider.downloadResource = originalDownload
   }
 
   const copied = await request(`/cards/${cardId}/copy`, {
@@ -753,7 +789,9 @@ test('keeps cross-column moves atomic and records precise activity', { skip: ski
   })
   assert.deepEqual(activity.metadata, {
     fromColumnId: previous._id,
-    toColumnId: next._id
+    fromColumnTitle: previous.title,
+    toColumnId: next._id,
+    toColumnTitle: next.title
   })
 })
 
@@ -972,6 +1010,21 @@ test('records every current mutation and creates the required indexes', { skip: 
     assert.equal(update.status, 200)
   }
 
+  const cardWithComment = await database.collection('cards').findOne({
+    _id: new ObjectId(cardId)
+  })
+  const reacted = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      commentReaction: {
+        commentId: cardWithComment.comments[0]._id,
+        emoji: '👍'
+      }
+    }
+  })
+  assert.equal(reacted.status, 200)
+
   const boardUpdate = await request(`/boards/${fixture.boardId}`, {
     token: fixture.users.admin.token,
     method: 'PUT',
@@ -1059,6 +1112,7 @@ test('records every current mutation and creates the required indexes', { skip: 
     'CARD_CREATED',
     'CARD_UPDATED',
     'CARD_COMMENTED',
+    'CARD_COMMENT_REACTED',
     'CARD_MEMBER_ADDED',
     'CARD_MEMBER_REMOVED',
     'INVITATION_CREATED',
@@ -1067,6 +1121,22 @@ test('records every current mutation and creates the required indexes', { skip: 
   ]) {
     assert.ok(actions.has(expected), `Missing activity action ${expected}`)
   }
+
+  const activityResponse = await request(
+    `/boards/${fixture.boardId}/activities?page=1&itemsPerPage=100`,
+    { token: fixture.users.viewer.token }
+  )
+  assert.equal(activityResponse.status, 200)
+  const reactionActivity = activityResponse.body.activities.find(
+    (activity) => activity.action === 'CARD_COMMENT_REACTED'
+  )
+  assert.equal(reactionActivity.entityTitle, 'Updated activity card')
+  assert.equal(reactionActivity.metadata.emoji, '👍')
+  assert.equal(reactionActivity.metadata.reactionAction, 'ADDED')
+  const memberActivity = activityResponse.body.activities.find(
+    (activity) => activity.action === 'CARD_MEMBER_ADDED'
+  )
+  assert.equal(memberActivity.targetUser.displayName, 'viewer')
 
   const indexExpectations = {
     users: ['users_email_unique', 'users_password_reset_token_unique'],

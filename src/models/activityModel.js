@@ -8,6 +8,9 @@ import {
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 import { pagingSkipValue } from '~/utils/algorithms'
 import { userModel } from '~/models/userModel'
+import { cardModel } from '~/models/cardModel'
+import { columnModel } from '~/models/columnModel'
+import { boardModel } from '~/models/boardModel'
 
 const ACTIVITY_COLLECTION_NAME = 'activities'
 const ACTIVITY_COLLECTION_SCHEMA = Joi.object({
@@ -69,7 +72,96 @@ const findByBoardId = async (boardId, page, itemsPerPage) => {
                 pipeline: [{ $project: userModel.PUBLIC_USER_PROJECTION }]
               }
             },
-            { $set: { actor: { $first: '$actor' } } }
+            {
+              $set: {
+                targetUserObjectId: {
+                  $convert: {
+                    input: {
+                      $ifNull: [
+                        '$metadata.targetUserId',
+                        {
+                          $ifNull: [
+                            '$metadata.memberId',
+                            '$metadata.inviteeId'
+                          ]
+                        }
+                      ]
+                    },
+                    to: 'objectId',
+                    onError: null,
+                    onNull: null
+                  }
+                }
+              }
+            },
+            {
+              $lookup: {
+                from: userModel.USER_COLLECTION_NAME,
+                localField: 'targetUserObjectId',
+                foreignField: '_id',
+                as: 'targetUser',
+                pipeline: [{
+                  $project: {
+                    _id: 1,
+                    userName: 1,
+                    displayName: 1,
+                    avatar: 1
+                  }
+                }]
+              }
+            },
+            {
+              $lookup: {
+                from: cardModel.CARD_COLLECTION_NAME,
+                localField: 'entityId',
+                foreignField: '_id',
+                as: 'cardEntity',
+                pipeline: [{ $project: { title: 1 } }]
+              }
+            },
+            {
+              $lookup: {
+                from: columnModel.COLUMN_COLLECTION_NAME,
+                localField: 'entityId',
+                foreignField: '_id',
+                as: 'columnEntity',
+                pipeline: [{ $project: { title: 1 } }]
+              }
+            },
+            {
+              $lookup: {
+                from: boardModel.BOARD_COLLECTION_NAME,
+                localField: 'entityId',
+                foreignField: '_id',
+                as: 'boardEntity',
+                pipeline: [{ $project: { title: 1 } }]
+              }
+            },
+            {
+              $set: {
+                actor: { $first: '$actor' },
+                targetUser: { $first: '$targetUser' },
+                entityTitle: {
+                  $ifNull: [
+                    { $first: '$cardEntity.title' },
+                    {
+                      $ifNull: [
+                        { $first: '$columnEntity.title' },
+                        { $first: '$boardEntity.title' }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              $unset: [
+                'targetUserObjectId',
+                'cardEntity',
+                'columnEntity',
+                'boardEntity'
+              ]
+            }
           ],
           total: [{ $count: 'count' }]
         }
