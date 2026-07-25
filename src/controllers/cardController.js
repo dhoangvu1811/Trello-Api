@@ -139,6 +139,23 @@ const removeAttachment = async (req, res, next) => {
   }
 }
 
+const downloadAttachment = async (req, res, next) => {
+  try {
+    const { attachment, buffer } = await cardService.downloadAttachment(
+      req.params.id,
+      req.params.attachmentId,
+      req.authorizedBoard
+    )
+
+    res.attachment(attachment.name)
+    res.type(attachment.mimeType)
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.status(StatusCodes.OK).send(buffer)
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const cardController = {
   createNew,
   update,
@@ -147,5 +164,6 @@ export const cardController = {
   getArchivedByBoardId,
   move,
   addAttachment,
-  removeAttachment
+  removeAttachment,
+  downloadAttachment
 }

@@ -149,6 +149,7 @@ export const boardAuthorizationMiddleware = {
     resolveCardParam,
     canEditBoardContent
   ),
+  requireBoardAccessByCard: authorize(resolveCardParam, canAccessBoard),
   requireBoardContentEditorForCardMove: authorize(
     resolveCardMove,
     canEditBoardContent

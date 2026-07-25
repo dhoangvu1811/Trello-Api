@@ -29,7 +29,45 @@ const streamUpload = (fileBuffer, folderName, options = {}) => {
 const destroy = async (publicId, resourceType = 'image') =>
   await cloudinaryV2.uploader.destroy(publicId, { resource_type: resourceType })
 
+export const isTrustedCloudinaryUrl = (url) => {
+  try {
+    const parsedUrl = new URL(url)
+    return parsedUrl.protocol === 'https:' &&
+      parsedUrl.hostname === 'res.cloudinary.com'
+  } catch {
+    return false
+  }
+}
+
+const downloadResource = async (url, maxBytes = 10 * 1024 * 1024) => {
+  if (!isTrustedCloudinaryUrl(url)) {
+    throw new Error('Refusing to download an untrusted attachment URL.')
+  }
+
+  const abortController = new AbortController()
+  const timeoutId = setTimeout(() => abortController.abort(), 15_000)
+  try {
+    const response = await fetch(url, { signal: abortController.signal })
+    if (!response.ok) {
+      throw new Error(`Cloud attachment returned HTTP ${response.status}.`)
+    }
+
+    const declaredSize = Number(response.headers.get('content-length'))
+    if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+      throw new Error('Cloud attachment exceeds its allowed size.')
+    }
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length > maxBytes) {
+      throw new Error('Cloud attachment exceeds its allowed size.')
+    }
+    return buffer
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export const CloudinaryProvider = {
   streamUpload,
-  destroy
+  destroy,
+  downloadResource
 }

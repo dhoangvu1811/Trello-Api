@@ -660,6 +660,42 @@ const removeAttachment = async (
   return updatedCard
 }
 
+const downloadAttachment = async (
+  cardId,
+  attachmentId,
+  authorizedBoard
+) => {
+  const card = await cardModel.findOneById(cardId)
+  if (!card || card.boardId.toString() !== authorizedBoard._id.toString()) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Card not found!')
+  }
+  const attachment = card.attachments?.find(
+    (item) => item._id === attachmentId
+  )
+  if (!attachment) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Attachment not found!')
+  }
+
+  try {
+    const buffer = await CloudinaryProvider.downloadResource(
+      attachment.url,
+      attachment.size
+    )
+    return { attachment, buffer }
+  } catch (error) {
+    logger.error('Failed to download card attachment', {
+      cardId,
+      attachmentId,
+      publicId: attachment.publicId,
+      error: error.message
+    })
+    throw new ApiError(
+      StatusCodes.BAD_GATEWAY,
+      'Attachment is temporarily unavailable.'
+    )
+  }
+}
+
 export const cardService = {
   createNew,
   update,
@@ -668,5 +704,6 @@ export const cardService = {
   getArchivedByBoardId,
   move,
   addAttachment,
-  removeAttachment
+  removeAttachment,
+  downloadAttachment
 }
