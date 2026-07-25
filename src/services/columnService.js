@@ -116,7 +116,8 @@ const deleteItem = async (columnId, actorId) => {
           actorId,
           action: ACTIVITY_ACTIONS.COLUMN_DELETED,
           entityType: ACTIVITY_ENTITY_TYPES.COLUMN,
-          entityId: columnId
+          entityId: columnId,
+          metadata: { entityTitle: targetColumn.title }
         },
         session
       )
