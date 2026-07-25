@@ -10,12 +10,15 @@ import {
   ACTIVITY_ACTIONS,
   ACTIVITY_ENTITY_TYPES,
   DEFAULT_ITEMS_PER_PAGE,
-  DEFAULT_PAGE
+  DEFAULT_PAGE,
+  NOTIFICATION_TYPES
 } from '~/utils/constants'
 import { hasSameIds } from '~/utils/resourceOrder'
 import { WITH_TRANSACTION } from '~/config/mongodb'
 import { activityService } from '~/services/activityService'
 import { getBoardRole } from '~/utils/boardPermissions'
+import { notificationService } from '~/services/notificationService'
+import { ObjectId } from 'mongodb'
 
 const createNew = async (userId, reqBody) => {
   try {
@@ -69,8 +72,8 @@ const getDetails = async (userId, boardId) => {
     //Đưa card về đúng column (dữ liệu chưa đúng vì card nằm cùng cấp với column)
     //method equals được mongoDb support
     resBoard.columns.forEach((column) => {
-      column.cards = resBoard.cards.filter((card) =>
-        card.columnId.equals(column._id)
+      column.cards = resBoard.cards.filter(
+        (card) => !card.archivedAt && card.columnId.equals(column._id)
       )
     })
 
@@ -203,6 +206,24 @@ const moveCardToDifferentColumn = async (reqBody, actorId) => {
         },
         session
       )
+      const recipients = [
+        ...(currentCard.memberIds || []),
+        ...(currentCard.watcherIds || [])
+      ].map(String).filter((userId) => userId !== actorId)
+      if (recipients.length) {
+        await notificationService.createForUsers(
+          recipients,
+          {
+            actorId,
+            boardId: currentCard.boardId.toString(),
+            cardId: currentCardId,
+            type: NOTIFICATION_TYPES.CARD_MOVED,
+            message: `Card “${currentCard.title}” was moved.`,
+            dedupeKey: `${NOTIFICATION_TYPES.CARD_MOVED}:${currentCardId}:${new ObjectId()}`
+          },
+          session
+        )
+      }
 
       return { updateResult: 'Successfully!' }
     })

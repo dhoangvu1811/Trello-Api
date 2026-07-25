@@ -37,6 +37,7 @@ const collections = [
   'cards',
   'columns',
   'invitations',
+  'notifications',
   'rateLimits',
   'users'
 ]
@@ -49,15 +50,16 @@ let baseUrl
 let modules
 
 const request = async (path, { token, cookies, method = 'GET', body } = {}) => {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   const response = await fetch(`${baseUrl}/V1${path}`, {
     method,
     headers: {
       ...(cookies || token
         ? { Cookie: cookies || `${AUTH_COOKIE_NAMES.access}=${token}` }
         : {}),
-      ...(body ? { 'Content-Type': 'application/json' } : {})
+      ...(body && !isFormData ? { 'Content-Type': 'application/json' } : {})
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? (isFormData ? body : JSON.stringify(body)) : undefined
   })
   const text = await response.text()
   return {
@@ -170,7 +172,10 @@ test.before(async () => {
   const { JwtProvider } = require('../build/src/providers/JwtProvider')
   const { boardService } = require('../build/src/services/boardService')
   const { cardModel } = require('../build/src/models/cardModel')
-  modules = { JwtProvider, boardService, cardModel }
+  const {
+    CloudinaryProvider
+  } = require('../build/src/providers/CloudinaryProvider')
+  modules = { JwtProvider, boardService, cardModel, CloudinaryProvider }
 
   await mongodb.CONNECT_DB()
   database = mongodb.GET_DB()
@@ -187,6 +192,7 @@ test.before(async () => {
 
 test.after(async () => {
   if (skipReason) return
+  if (!database) return
   if (!databaseName.startsWith('trello_phase0_test_')) {
     throw new Error('Refusing to clean a database outside the Phase Zero test namespace.')
   }
@@ -195,8 +201,8 @@ test.after(async () => {
       collections.map((name) => database.collection(name).deleteMany({}))
     )
   } finally {
-    await new Promise((resolve) => io.close(resolve))
-    await api.CLOSE_DB()
+    if (io) await new Promise((resolve) => io.close(resolve))
+    if (api) await api.CLOSE_DB()
   }
 })
 
@@ -274,6 +280,411 @@ test('enforces the complete board role hierarchy over HTTP', { skip: skipReason 
     { token: fixture.users.outsider.token }
   )
   assert.equal(outsiderActivities.status, 403)
+})
+
+test('supports the complete card lifecycle and notifications', { skip: skipReason }, async () => {
+  const fixture = await resetFixture()
+  const backlog = await createColumn(fixture, 'Backlog')
+  const done = await createColumn(fixture, 'Done')
+  const created = await request('/cards', {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: {
+      boardId: fixture.boardId,
+      columnId: backlog._id,
+      title: 'Phase One Card'
+    }
+  })
+  assert.equal(created.status, 201)
+  const cardId = created.body._id
+
+  const updated = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      priority: 'URGENT',
+      startDate: Date.now(),
+      dueDate: Date.now() + 60 * 60 * 1000,
+      labels: [{ name: 'Release', color: '#0C66E4' }],
+      checklist: [{ title: 'Verify release', isCompleted: true }],
+      watcherIds: [fixture.ids.admin.toString()]
+    }
+  })
+  assert.equal(updated.status, 200)
+  assert.equal(updated.body.priority, 'URGENT')
+  assert.equal(updated.body.checklist[0].isCompleted, true)
+  assert.equal(ObjectId.isValid(updated.body.labels[0]._id), true)
+
+  const assigned = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      incommingMemberInfo: {
+        userId: fixture.ids.admin.toString(),
+        action: 'ADD'
+      }
+    }
+  })
+  assert.equal(assigned.status, 200)
+
+  const comment = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { commentToAdd: { content: 'Please review @admin@phase0.test' } }
+  })
+  assert.equal(comment.status, 200)
+  assert.equal(ObjectId.isValid(comment.body.comments[0]._id), true)
+
+  const moved = await request(`/cards/${cardId}/move`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { targetColumnId: done._id }
+  })
+  assert.equal(moved.status, 200)
+  assert.equal(moved.body.columnId, done._id)
+
+  const copied = await request(`/cards/${cardId}/copy`, {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: { targetColumnId: backlog._id }
+  })
+  assert.equal(copied.status, 201)
+  assert.equal(copied.body.columnId, backlog._id)
+
+  const archived = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: true }
+  })
+  assert.equal(archived.status, 200)
+  assert.equal(typeof archived.body.archivedAt, 'number')
+
+  const archive = await request(`/cards/archived/board/${fixture.boardId}`, {
+    token: fixture.users.member.token
+  })
+  assert.equal(archive.status, 200)
+  assert.equal(archive.body.some((card) => card._id === cardId), true)
+
+  const restored = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: false }
+  })
+  assert.equal(restored.status, 200)
+  assert.equal(restored.body.archivedAt, null)
+
+  const notifications = await request('/notifications', {
+    token: fixture.users.admin.token
+  })
+  assert.equal(notifications.status, 200)
+  assert.equal(
+    notifications.body.some((item) => item.type === 'CARD_ASSIGNED'),
+    true
+  )
+  assert.equal(
+    notifications.body.some((item) => item.type === 'CARD_MENTIONED'),
+    true
+  )
+  assert.equal(
+    notifications.body.some((item) => item.type === 'CARD_MOVED'),
+    true
+  )
+})
+
+test('validates phase one card invariants and attachment lifecycle', {
+  skip: skipReason
+}, async () => {
+  const fixture = await resetFixture()
+  const backlog = await createColumn(fixture, 'Phase One Backlog')
+  const done = await createColumn(fixture, 'Phase One Done')
+  const created = await request('/cards', {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: {
+      boardId: fixture.boardId,
+      columnId: backlog._id,
+      title: 'Phase One Invariants'
+    }
+  })
+  assert.equal(created.status, 201)
+  const cardId = created.body._id
+
+  const invalidDates = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { startDate: Date.now() + 60_000, dueDate: Date.now() }
+  })
+  assert.equal(invalidDates.status, 422)
+
+  const invalidWatcher = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { watcherIds: [fixture.ids.outsider.toString()] }
+  })
+  assert.equal(invalidWatcher.status, 422)
+
+  const watched = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { watcherIds: [fixture.ids.admin.toString()] }
+  })
+  assert.equal(watched.status, 200)
+
+  const completedChecklist = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      checklist: [{ title: 'Preserve completion author', isCompleted: true }]
+    }
+  })
+  assert.equal(completedChecklist.status, 200)
+  const checklistItem = completedChecklist.body.checklist[0]
+  assert.equal(checklistItem.completedBy, fixture.ids.member.toString())
+
+  const renamedChecklist = await request(`/cards/${cardId}`, {
+    token: fixture.users.admin.token,
+    method: 'PUT',
+    body: {
+      checklist: [{
+        ...checklistItem,
+        title: 'Renamed by another user',
+        completedBy: fixture.ids.admin.toString(),
+        completedAt: Date.now()
+      }]
+    }
+  })
+  assert.equal(renamedChecklist.status, 200)
+  assert.equal(
+    renamedChecklist.body.checklist[0].completedBy,
+    fixture.ids.member.toString()
+  )
+  assert.equal(
+    new Date(renamedChecklist.body.checklist[0].completedAt).getTime(),
+    new Date(checklistItem.completedAt).getTime()
+  )
+  const checklistNotifications = await request('/notifications', {
+    token: fixture.users.admin.token
+  })
+  assert.equal(
+    checklistNotifications.body.some(
+      (item) => item.type === 'CARD_CHECKLIST_COMPLETED'
+    ),
+    true
+  )
+
+  const commentAdded = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { commentToAdd: { content: 'Original comment' } }
+  })
+  const commentId = commentAdded.body.comments[0]._id
+  const foreignEdit = await request(`/cards/${cardId}`, {
+    token: fixture.users.admin.token,
+    method: 'PUT',
+    body: {
+      commentToUpdate: { commentId, content: 'Unauthorized edit' }
+    }
+  })
+  assert.equal(foreignEdit.status, 403)
+
+  const reaction = await request(`/cards/${cardId}`, {
+    token: fixture.users.admin.token,
+    method: 'PUT',
+    body: { commentReaction: { commentId, emoji: '👍' } }
+  })
+  assert.equal(reaction.status, 200)
+  assert.deepEqual(
+    reaction.body.comments[0].reactions[0].userIds,
+    [fixture.ids.admin.toString()]
+  )
+
+  const edited = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { commentToUpdate: { commentId, content: 'Edited comment' } }
+  })
+  assert.equal(edited.status, 200)
+  assert.equal(edited.body.comments[0].content, 'Edited comment')
+  assert.equal(typeof edited.body.comments[0].editedAt, 'number')
+
+  const originalUpload = modules.CloudinaryProvider.streamUpload
+  const originalDestroy = modules.CloudinaryProvider.destroy
+  const destroyed = []
+  modules.CloudinaryProvider.streamUpload = async () => ({
+    secure_url: 'https://res.cloudinary.com/test/raw/upload/test.txt',
+    public_id: 'card-attachments/test',
+    resource_type: 'raw'
+  })
+  modules.CloudinaryProvider.destroy = async (...args) => {
+    destroyed.push(args)
+    return { result: 'ok' }
+  }
+  try {
+    const form = new FormData()
+    form.append(
+      'attachment',
+      new Blob(['phase one attachment'], { type: 'text/plain' }),
+      'phase-one.txt'
+    )
+    const uploaded = await request(`/cards/${cardId}/attachments`, {
+      token: fixture.users.member.token,
+      method: 'POST',
+      body: form
+    })
+    assert.equal(uploaded.status, 201)
+    const attachment = uploaded.body.attachments[0]
+    assert.equal(attachment.name, 'phase-one.txt')
+    assert.equal(attachment.mimeType, 'text/plain')
+    assert.equal(attachment.uploadedBy, fixture.ids.member.toString())
+
+    const removed = await request(
+      `/cards/${cardId}/attachments/${attachment._id}`,
+      {
+        token: fixture.users.member.token,
+        method: 'DELETE'
+      }
+    )
+    assert.equal(removed.status, 200)
+    assert.deepEqual(removed.body.attachments, [])
+    assert.deepEqual(destroyed, [['card-attachments/test', 'raw']])
+  } finally {
+    modules.CloudinaryProvider.streamUpload = originalUpload
+    modules.CloudinaryProvider.destroy = originalDestroy
+  }
+
+  const copied = await request(`/cards/${cardId}/copy`, {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: { targetColumnId: done._id }
+  })
+  assert.equal(copied.status, 201)
+  assert.equal(copied.body.completedAt, null)
+  assert.deepEqual(copied.body.attachments, [])
+  assert.deepEqual(copied.body.comments, [])
+  assert.equal(copied.body.checklist[0].isCompleted, false)
+  assert.equal(copied.body.checklist[0].completedBy, null)
+
+  const deleted = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { commentToDelete: { commentId } }
+  })
+  assert.equal(deleted.status, 200)
+  assert.deepEqual(deleted.body.comments, [])
+})
+
+test('covers phase one due notifications, archive ordering, and board boundaries', {
+  skip: skipReason
+}, async () => {
+  const fixture = await resetFixture()
+  const backlog = await createColumn(fixture, 'Boundary Backlog')
+  const cardResponse = await request('/cards', {
+    token: fixture.users.member.token,
+    method: 'POST',
+    body: {
+      boardId: fixture.boardId,
+      columnId: backlog._id,
+      title: 'Boundary Card'
+    }
+  })
+  const cardId = cardResponse.body._id
+  const dueDate = Date.now() + 60 * 60 * 1000
+  const watched = await request(`/cards/${cardId}`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: {
+      dueDate,
+      watcherIds: [fixture.ids.admin.toString()]
+    }
+  })
+  assert.equal(watched.status, 200)
+
+  const dueSoon = await request('/notifications', {
+    token: fixture.users.admin.token
+  })
+  assert.equal(
+    dueSoon.body.some((item) =>
+      item.cardId === cardId && item.type === 'CARD_DUE_SOON'
+    ),
+    true
+  )
+  const dueSoonNotification = dueSoon.body.find(
+    (item) => item.cardId === cardId && item.type === 'CARD_DUE_SOON'
+  )
+  const cannotReadAnotherUsersNotification = await request(
+    `/notifications/${dueSoonNotification._id}/read`,
+    { token: fixture.users.member.token, method: 'PUT' }
+  )
+  assert.equal(cannotReadAnotherUsersNotification.status, 404)
+  const markedRead = await request(
+    `/notifications/${dueSoonNotification._id}/read`,
+    { token: fixture.users.admin.token, method: 'PUT' }
+  )
+  assert.equal(markedRead.status, 200)
+  assert.equal(typeof markedRead.body.readAt, 'number')
+
+  await database.collection('cards').updateOne(
+    { _id: new ObjectId(cardId) },
+    { $set: { dueDate: new Date(Date.now() - 60_000) } }
+  )
+  const overdue = await request('/notifications', {
+    token: fixture.users.admin.token
+  })
+  assert.equal(
+    overdue.body.some((item) =>
+      item.cardId === cardId && item.type === 'CARD_OVERDUE'
+    ),
+    true
+  )
+
+  const archived = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: true }
+  })
+  assert.equal(archived.status, 200)
+  const archivedColumn = await database.collection('columns').findOne({
+    _id: new ObjectId(backlog._id)
+  })
+  assert.equal(archivedColumn.cardOrderIds.map(String).includes(cardId), false)
+
+  const restored = await request(`/cards/${cardId}/archive`, {
+    token: fixture.users.member.token,
+    method: 'PUT',
+    body: { archived: false }
+  })
+  assert.equal(restored.status, 200)
+  const restoredColumn = await database.collection('columns').findOne({
+    _id: new ObjectId(backlog._id)
+  })
+  assert.equal(restoredColumn.cardOrderIds.map(String).includes(cardId), true)
+
+  const secondBoard = await request('/boards', {
+    token: fixture.users.owner.token,
+    method: 'POST',
+    body: {
+      title: 'Second Board',
+      description: 'Cross-board target',
+      type: 'private'
+    }
+  })
+  const secondColumn = await request('/columns', {
+    token: fixture.users.owner.token,
+    method: 'POST',
+    body: { boardId: secondBoard.body._id, title: 'Foreign column' }
+  })
+  const crossBoardMove = await request(`/cards/${cardId}/move`, {
+    token: fixture.users.owner.token,
+    method: 'PUT',
+    body: { targetColumnId: secondColumn.body._id }
+  })
+  assert.equal(crossBoardMove.status, 422)
+  const crossBoardCopy = await request(`/cards/${cardId}/copy`, {
+    token: fixture.users.owner.token,
+    method: 'POST',
+    body: { targetColumnId: secondColumn.body._id }
+  })
+  assert.equal(crossBoardCopy.status, 422)
 })
 
 test('keeps cross-column moves atomic and records precise activity', { skip: skipReason }, async () => {

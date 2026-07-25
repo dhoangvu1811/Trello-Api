@@ -26,6 +26,7 @@ const collectionNames = [
   'cards',
   'columns',
   'invitations',
+  'notifications',
   'rateLimits',
   'users'
 ]

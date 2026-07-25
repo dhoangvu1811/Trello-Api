@@ -1,7 +1,14 @@
 import { StatusCodes } from 'http-status-codes'
 // import ApiError from '~/utils/ApiError'
 import { cardService } from '~/services/cardService'
-import { emitBoardUpdated } from '~/sockets/boardEvents'
+import {
+  emitBoardUpdated,
+  emitCardNotificationsUpdated
+} from '~/sockets/boardEvents'
+import { getBoardUserIds } from '~/utils/boardPermissions'
+
+const emitNotificationRefresh = (req) =>
+  emitCardNotificationsUpdated(req, getBoardUserIds(req.authorizedBoard))
 
 const createNew = async (req, res, next) => {
   try {
@@ -33,7 +40,100 @@ const update = async (req, res, next) => {
     )
 
     emitBoardUpdated(req)
+    if (
+      req.body.commentToAdd ||
+      req.body.incommingMemberInfo ||
+      Object.prototype.hasOwnProperty.call(req.body, 'completedAt') ||
+      req.body.checklist
+    ) {
+      emitNotificationRefresh(req)
+    }
     res.status(StatusCodes.OK).json(updatedCard)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const setArchived = async (req, res, next) => {
+  try {
+    const updatedCard = await cardService.setArchived(
+      req.params.id,
+      req.body.archived,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    res.status(StatusCodes.OK).json(updatedCard)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const copy = async (req, res, next) => {
+  try {
+    const copiedCard = await cardService.copy(
+      req.params.id,
+      req.body,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    res.status(StatusCodes.CREATED).json(copiedCard)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const getArchivedByBoardId = async (req, res, next) => {
+  try {
+    const cards = await cardService.getArchivedByBoardId(req.params.id)
+    res.status(StatusCodes.OK).json(cards)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const move = async (req, res, next) => {
+  try {
+    const card = await cardService.move(
+      req.params.id,
+      req.body.targetColumnId,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    emitNotificationRefresh(req)
+    res.status(StatusCodes.OK).json(card)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const addAttachment = async (req, res, next) => {
+  try {
+    const card = await cardService.addAttachment(
+      req.params.id,
+      req.file,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    res.status(StatusCodes.CREATED).json(card)
+  } catch (error) {
+    next(error)
+  }
+}
+
+const removeAttachment = async (req, res, next) => {
+  try {
+    const card = await cardService.removeAttachment(
+      req.params.id,
+      req.params.attachmentId,
+      req.jwtDecoded,
+      req.authorizedBoard
+    )
+    emitBoardUpdated(req)
+    res.status(StatusCodes.OK).json(card)
   } catch (error) {
     next(error)
   }
@@ -41,5 +141,11 @@ const update = async (req, res, next) => {
 
 export const cardController = {
   createNew,
-  update
+  update,
+  setArchived,
+  copy,
+  getArchivedByBoardId,
+  move,
+  addAttachment,
+  removeAttachment
 }
